@@ -1,0 +1,1096 @@
+'use client'
+
+import { useState } from 'react'
+import { createClient } from '@/utils/supabase/client'
+import { useRouter } from 'next/navigation'
+import { generarPdfStockBajo } from '@/utils/generarPdfStockBajo'
+import { generarExcelStockBajo, generarExcelInventarioCompleto } from '@/utils/generarExcelInventario'
+import EdicionLoteModal, { CampoLoteDef, FilaCalculada } from '../EdicionLoteModal'
+import { aplicarEdicionLote } from '@/utils/aplicarEdicionLote'
+
+type Producto = {
+  id: string
+  codigo: string
+  nombre: string
+  categoria_id: string | null
+  categorias: { nombre: string } | null
+  precio_costo: number
+  precio_venta: number
+  precio_mayoreo: number
+  activo: boolean
+  imagen_url?: string | null
+}
+
+type Inventario = {
+  id: string
+  existencia: number
+  inventario_minimo: number
+  inventario_maximo: number
+  productos: Producto | null
+}
+
+type Sucursal = {
+  id: string
+  nombre: string
+}
+
+type Categoria = {
+  id: string
+  nombre: string
+  categoria_padre: string | null
+}
+
+function esStockBajo(i: Inventario) {
+  return i.existencia <= i.inventario_maximo / 3
+}
+
+const formNuevoVacio = {
+  codigo: '',
+  nombre: '',
+  categoria_id: '',
+  precio_costo: '',
+  precio_venta: '',
+  precio_mayoreo: '',
+  existencia: '0',
+  inventario_minimo: '0',
+  inventario_maximo: '0',
+}
+
+export default function InventarioTable({
+  inventario,
+  sucursales,
+  sucursalActiva,
+  categorias,
+  esAdmin,
+}: {
+  inventario: Inventario[]
+  sucursales: Sucursal[]
+  sucursalActiva: string
+  categorias: Categoria[]
+  esAdmin: boolean
+}) {
+  const [busqueda, setBusqueda] = useState('')
+  const [categoriaFiltro, setCategoriaFiltro] = useState('')
+  const [subcategoriaFiltro, setSubcategoriaFiltro] = useState('')
+  const [estadoStockFiltro, setEstadoStockFiltro] = useState('')
+  const [orden, setOrden] = useState<'az' | 'za'>('az')
+  const [editando, setEditando] = useState<Inventario | null>(null)
+  const [guardando, setGuardando] = useState(false)
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
+  const [mostrarLote, setMostrarLote] = useState(false)
+  const [loteInicial, setLoteInicial] = useState<{ campo?: string; modo?: 'fijar' | 'porcentaje' | 'monto' | 'llenar_referencia' }>({})
+  const [aplicandoLote, setAplicandoLote] = useState(false)
+  const [mostrarAgregar, setMostrarAgregar] = useState(false)
+  const [nuevoProducto, setNuevoProducto] = useState(formNuevoVacio)
+  const [agregando, setAgregando] = useState(false)
+  const [errorAgregar, setErrorAgregar] = useState('')
+  const [borrandoId, setBorrandoId] = useState<string | null>(null)
+  const [imagenPara, setImagenPara] = useState<Inventario | null>(null)
+  const [archivoImagen, setArchivoImagen] = useState<File | null>(null)
+  const [previewImagen, setPreviewImagen] = useState<string>('')
+  const [subiendoImagen, setSubiendoImagen] = useState(false)
+  const [errorImagen, setErrorImagen] = useState('')
+  const router = useRouter()
+  const supabase = createClient()
+
+  const camposLote: CampoLoteDef[] = [
+    {
+      key: 'categoria_id', label: 'Categoría', tipo: 'select', tabla: 'productos', idCampo: 'productoId',
+      opciones: categorias.map((c) => ({ value: c.id, label: `${c.categoria_padre ? '— ' : ''}${c.nombre}` })),
+    },
+    { key: 'precio_venta', label: 'P. Venta', tipo: 'numero', prefijo: '$', tabla: 'productos', idCampo: 'productoId' },
+    { key: 'precio_costo', label: 'P. Costo', tipo: 'numero', prefijo: '$', tabla: 'productos', idCampo: 'productoId' },
+    { key: 'precio_mayoreo', label: 'P. Mayoreo', tipo: 'numero', prefijo: '$', tabla: 'productos', idCampo: 'productoId' },
+    {
+      key: 'existencia', label: 'Existencia', tipo: 'numero', tabla: 'inventario',
+      modos: ['fijar', 'llenar_referencia', 'monto'],
+      campoReferencia: 'inventario_maximo',
+      etiquetaReferencia: 'Llenar stock (al máximo)',
+    },
+    { key: 'inventario_minimo', label: 'Mínimo', tipo: 'numero', tabla: 'inventario' },
+    { key: 'inventario_maximo', label: 'Máximo', tipo: 'numero', tabla: 'inventario' },
+  ]
+
+  function abrirLote(campo?: string, modo?: 'fijar' | 'porcentaje' | 'monto' | 'llenar_referencia') {
+    setLoteInicial({ campo, modo })
+    setMostrarLote(true)
+  }
+
+  const categoriasPrincipales = categorias.filter(c => !c.categoria_padre)
+  const subcategoriasDisponibles = categorias.filter(c => c.categoria_padre === categoriaFiltro)
+  const idsParaFiltrar = categoriaFiltro
+    ? [categoriaFiltro, ...categorias.filter(c => c.categoria_padre === categoriaFiltro).map(c => c.id)]
+    : []
+
+  const filtrados = inventario
+    .filter(i =>
+      i.productos?.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+      i.productos?.codigo?.toLowerCase().includes(busqueda.toLowerCase())
+    )
+    .filter(i => {
+      if (subcategoriaFiltro) return i.productos?.categoria_id === subcategoriaFiltro
+      if (categoriaFiltro) return idsParaFiltrar.includes(i.productos?.categoria_id || '')
+      return true
+    })
+    .filter(i => {
+      if (!estadoStockFiltro) return true
+      return estadoStockFiltro === 'bajo' ? esStockBajo(i) : !esStockBajo(i)
+    })
+    .sort((a, b) =>
+      orden === 'az'
+        ? (a.productos?.nombre || '').localeCompare(b.productos?.nombre || '')
+        : (b.productos?.nombre || '').localeCompare(a.productos?.nombre || '')
+    )
+
+  const productosBajo = inventario.filter(esStockBajo)
+
+  function descargarReportePdf() {
+    const sucursalNombre = sucursales.find((s) => s.id === sucursalActiva)?.nombre || ''
+    generarPdfStockBajo(
+      sucursalNombre,
+      productosBajo.map((i) => ({
+        codigo: i.productos?.codigo || '',
+        nombre: i.productos?.nombre || '',
+        existencia: i.existencia,
+        inventario_minimo: i.inventario_minimo,
+        inventario_maximo: i.inventario_maximo,
+      }))
+    )
+  }
+
+  function descargarExcelStockBajo() {
+    const sucursalNombre = sucursales.find((s) => s.id === sucursalActiva)?.nombre || ''
+    generarExcelStockBajo(
+      sucursalNombre,
+      productosBajo.map((i) => ({
+        codigo: i.productos?.codigo || '',
+        nombre: i.productos?.nombre || '',
+        existencia: i.existencia,
+        inventario_minimo: i.inventario_minimo,
+        inventario_maximo: i.inventario_maximo,
+      }))
+    )
+  }
+
+  function descargarExcelCompleto() {
+    const sucursalNombre = sucursales.find((s) => s.id === sucursalActiva)?.nombre || ''
+    generarExcelInventarioCompleto(
+      sucursalNombre,
+      inventario.map((i) => ({
+        codigo: i.productos?.codigo || '',
+        nombre: i.productos?.nombre || '',
+        existencia: i.existencia,
+        inventario_minimo: i.inventario_minimo,
+        inventario_maximo: i.inventario_maximo,
+      }))
+    )
+  }
+
+  function cambiarSucursal(id: string) {
+    setCategoriaFiltro('')
+    setSubcategoriaFiltro('')
+    router.push(`/admin/inventario?sucursal=${id}`)
+  }
+
+  function cambiarCategoria(id: string) {
+    setCategoriaFiltro(id)
+    setSubcategoriaFiltro('')
+  }
+
+  const visibles = filtrados.slice(0, 100)
+  const todosSeleccionados = filtrados.length > 0 && filtrados.every((i) => seleccionados.has(i.id))
+
+  function toggleTodos() {
+    if (todosSeleccionados) {
+      setSeleccionados(new Set())
+    } else {
+      setSeleccionados(new Set(filtrados.map((i) => i.id)))
+    }
+  }
+
+  function toggleUno(id: string) {
+    const nuevo = new Set(seleccionados)
+    if (nuevo.has(id)) nuevo.delete(id)
+    else nuevo.add(id)
+    setSeleccionados(nuevo)
+  }
+
+  async function manejarAplicarLote(campo: string, filas: FilaCalculada[]) {
+    const def = camposLote.find((c) => c.key === campo)
+    const tabla = def?.tabla || 'inventario'
+
+    setAplicandoLote(true)
+    const error = await aplicarEdicionLote(supabase, tabla, campo, filas)
+    setAplicandoLote(false)
+
+    if (error) {
+      alert('Error al aplicar cambios en lote: ' + error)
+      return
+    }
+
+    setSeleccionados(new Set())
+    setMostrarLote(false)
+    router.refresh()
+  }
+
+  async function guardarCambios(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editando || !editando.productos) return
+    setGuardando(true)
+
+    const { error: errorInventario } = await supabase
+      .from('inventario')
+      .update({
+        existencia: editando.existencia,
+        inventario_minimo: editando.inventario_minimo,
+        inventario_maximo: editando.inventario_maximo,
+      })
+      .eq('id', editando.id)
+
+    const { error: errorProducto } = await supabase
+      .from('productos')
+      .update({
+        codigo: editando.productos.codigo,
+        nombre: editando.productos.nombre,
+        categoria_id: editando.productos.categoria_id,
+        precio_costo: editando.productos.precio_costo,
+        precio_venta: editando.productos.precio_venta,
+        precio_mayoreo: editando.productos.precio_mayoreo,
+        activo: editando.productos.activo,
+      })
+      .eq('id', editando.productos.id)
+
+    setGuardando(false)
+
+    if (errorInventario || errorProducto) {
+      alert('Error al guardar: ' + (errorInventario?.message || errorProducto?.message))
+      return
+    }
+
+    setEditando(null)
+    router.refresh()
+  }
+
+  function actualizarProductoEditando(cambios: Partial<Producto>) {
+    if (!editando || !editando.productos) return
+    setEditando({ ...editando, productos: { ...editando.productos, ...cambios } })
+  }
+
+  function abrirAgregar() {
+    setNuevoProducto(formNuevoVacio)
+    setErrorAgregar('')
+    setMostrarAgregar(true)
+  }
+
+  async function agregarProducto() {
+    if (!nuevoProducto.nombre.trim()) {
+      setErrorAgregar('El nombre es obligatorio')
+      return
+    }
+
+    setAgregando(true)
+    setErrorAgregar('')
+
+    const { data: productoCreado, error: errorProducto } = await supabase
+      .from('productos')
+      .insert({
+        codigo: nuevoProducto.codigo || null,
+        nombre: nuevoProducto.nombre,
+        categoria_id: nuevoProducto.categoria_id || null,
+        precio_costo: parseFloat(nuevoProducto.precio_costo) || 0,
+        precio_venta: parseFloat(nuevoProducto.precio_venta) || 0,
+        precio_mayoreo: parseFloat(nuevoProducto.precio_mayoreo) || 0,
+        activo: true,
+      })
+      .select('id')
+      .single()
+
+    if (errorProducto || !productoCreado) {
+      setAgregando(false)
+      setErrorAgregar('Error al crear producto: ' + errorProducto?.message)
+      return
+    }
+
+    const filasInventario = sucursales.map((s) => ({
+      producto_id: productoCreado.id,
+      sucursal_id: s.id,
+      existencia: s.id === sucursalActiva ? parseInt(nuevoProducto.existencia) || 0 : 0,
+      inventario_minimo: parseInt(nuevoProducto.inventario_minimo) || 0,
+      inventario_maximo: parseInt(nuevoProducto.inventario_maximo) || 0,
+    }))
+
+    const { error: errorInventario } = await supabase.from('inventario').insert(filasInventario)
+
+    setAgregando(false)
+
+    if (errorInventario) {
+      await supabase.from('productos').delete().eq('id', productoCreado.id)
+      setErrorAgregar('Error al crear inventario: ' + errorInventario.message)
+      return
+    }
+
+    setMostrarAgregar(false)
+    router.refresh()
+  }
+
+  async function borrarProducto(i: Inventario) {
+    const productoId = i.productos?.id
+    if (!productoId) return
+
+    if (!confirm(`¿Eliminar "${i.productos?.nombre}" del catálogo? Se quitará de las 3 sucursales. Esta acción no se puede deshacer.`)) return
+
+    setBorrandoId(productoId)
+
+    const [{ count: enCotizaciones }, { count: enVentas }, { count: enPromociones }] = await Promise.all([
+      supabase.from('cotizacion_items').select('*', { count: 'exact', head: true }).eq('producto_id', productoId),
+      supabase.from('venta_items').select('*', { count: 'exact', head: true }).eq('producto_id', productoId),
+      supabase.from('promociones').select('*', { count: 'exact', head: true }).eq('producto_id', productoId),
+    ])
+
+    if ((enCotizaciones || 0) > 0 || (enVentas || 0) > 0 || (enPromociones || 0) > 0) {
+      setBorrandoId(null)
+      alert('No se puede eliminar: este producto tiene cotizaciones, ventas o promociones asociadas.')
+      return
+    }
+
+    const { error: errorInventario } = await supabase.from('inventario').delete().eq('producto_id', productoId)
+
+    if (errorInventario) {
+      setBorrandoId(null)
+      alert('Error al eliminar el inventario del producto: ' + errorInventario.message)
+      return
+    }
+
+    const { error: errorProducto } = await supabase.from('productos').delete().eq('id', productoId)
+
+    setBorrandoId(null)
+
+    if (errorProducto) {
+      alert('Error al eliminar el producto: ' + errorProducto.message)
+      return
+    }
+
+    router.refresh()
+  }
+
+  function abrirImagen(i: Inventario) {
+    setImagenPara(i)
+    setArchivoImagen(null)
+    setPreviewImagen('')
+    setErrorImagen('')
+  }
+
+  function elegirArchivoImagen(archivo: File | undefined) {
+    if (!archivo) return
+    if (!archivo.type.startsWith('image/')) {
+      setErrorImagen('Selecciona un archivo de imagen')
+      return
+    }
+    if (archivo.size > 5 * 1024 * 1024) {
+      setErrorImagen('La imagen no debe pesar más de 5MB')
+      return
+    }
+    setErrorImagen('')
+    setArchivoImagen(archivo)
+    setPreviewImagen(URL.createObjectURL(archivo))
+  }
+
+  async function subirImagen() {
+    if (!imagenPara?.productos || !archivoImagen) return
+    const productoId = imagenPara.productos.id
+
+    setSubiendoImagen(true)
+    setErrorImagen('')
+
+    const extension = archivoImagen.name.split('.').pop() || 'jpg'
+    const ruta = `${productoId}.${extension}`
+
+    const { error: errorSubida } = await supabase.storage
+      .from('productos')
+      .upload(ruta, archivoImagen, { upsert: true })
+
+    if (errorSubida) {
+      setSubiendoImagen(false)
+      setErrorImagen('Error al subir la imagen: ' + errorSubida.message)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from('productos').getPublicUrl(ruta)
+    const urlConVersion = `${urlData.publicUrl}?t=${Date.now()}`
+
+    const { error: errorUpdate } = await supabase
+      .from('productos')
+      .update({ imagen_url: urlConVersion })
+      .eq('id', productoId)
+
+    setSubiendoImagen(false)
+
+    if (errorUpdate) {
+      setErrorImagen('Error al guardar la imagen: ' + errorUpdate.message)
+      return
+    }
+
+    setImagenPara(null)
+    router.refresh()
+  }
+
+  async function quitarImagen() {
+    if (!imagenPara?.productos) return
+    setSubiendoImagen(true)
+
+    const { error } = await supabase
+      .from('productos')
+      .update({ imagen_url: null })
+      .eq('id', imagenPara.productos.id)
+
+    setSubiendoImagen(false)
+
+    if (error) {
+      setErrorImagen('Error al quitar la imagen: ' + error.message)
+      return
+    }
+
+    setImagenPara(null)
+    router.refresh()
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {esAdmin && sucursales.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => cambiarSucursal(s.id)}
+            style={{
+              padding: '10px 18px', borderRadius: '8px', border: 'none',
+              fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              backgroundColor: s.id === sucursalActiva ? '#1A6DD4' : 'white',
+              color: s.id === sucursalActiva ? 'white' : '#0D1B3E',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
+            }}
+          >
+            {s.nombre}
+          </button>
+        ))}
+
+        {esAdmin && (
+          <button
+            onClick={abrirAgregar}
+            style={{
+              marginLeft: 'auto', padding: '10px 18px', borderRadius: '8px', border: 'none',
+              fontSize: '13px', fontWeight: 600, cursor: 'pointer', backgroundColor: '#1A7A3E', color: 'white',
+            }}
+          >
+            + Agregar producto
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{
+          fontSize: '13px', fontWeight: 600, padding: '8px 16px', borderRadius: '8px',
+          backgroundColor: productosBajo.length > 0 ? '#FDE8E8' : '#E8F7EE',
+          color: productosBajo.length > 0 ? '#B81C1C' : '#1A7A3E',
+        }}>
+          {productosBajo.length} producto{productosBajo.length === 1 ? '' : 's'} con stock bajo
+        </span>
+
+        <button
+          onClick={descargarReportePdf}
+          disabled={productosBajo.length === 0}
+          style={{
+            padding: '8px 16px', borderRadius: '8px', border: 'none',
+            fontSize: '13px', fontWeight: 600, cursor: productosBajo.length === 0 ? 'default' : 'pointer',
+            backgroundColor: '#1A6DD4', color: 'white', opacity: productosBajo.length === 0 ? 0.5 : 1,
+          }}
+        >
+          Reporte PDF (stock bajo)
+        </button>
+
+        <button
+          onClick={descargarExcelStockBajo}
+          disabled={productosBajo.length === 0}
+          style={{
+            padding: '8px 16px', borderRadius: '8px', border: 'none',
+            fontSize: '13px', fontWeight: 600, cursor: productosBajo.length === 0 ? 'default' : 'pointer',
+            backgroundColor: '#1A7A3E', color: 'white', opacity: productosBajo.length === 0 ? 0.5 : 1,
+          }}
+        >
+          Excel (stock bajo)
+        </button>
+
+        <button
+          onClick={descargarExcelCompleto}
+          disabled={inventario.length === 0}
+          style={{
+            padding: '8px 16px', borderRadius: '8px', border: 'none',
+            fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+            backgroundColor: 'white', color: '#0D1B3E', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          }}
+        >
+          Excel (inventario completo)
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <input
+          type="text"
+          placeholder="Buscar por nombre o código..."
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          style={{
+            flex: '1', minWidth: '220px', maxWidth: '380px', padding: '10px 14px',
+            border: '1px solid #E0E8F5', borderRadius: '8px', fontSize: '14px', backgroundColor: 'white'
+          }}
+        />
+
+        <select
+          value={categoriaFiltro}
+          onChange={(e) => cambiarCategoria(e.target.value)}
+          style={{
+            padding: '10px 14px', border: '1px solid #E0E8F5', borderRadius: '8px',
+            fontSize: '14px', backgroundColor: 'white', minWidth: '200px'
+          }}
+        >
+          <option value="">Todas las categorías</option>
+          {categoriasPrincipales.map((c) => (
+            <option key={c.id} value={c.id}>{c.nombre}</option>
+          ))}
+        </select>
+
+        {categoriaFiltro && subcategoriasDisponibles.length > 0 && (
+          <select
+            value={subcategoriaFiltro}
+            onChange={(e) => setSubcategoriaFiltro(e.target.value)}
+            style={{
+              padding: '10px 14px', border: '1px solid #E0E8F5', borderRadius: '8px',
+              fontSize: '14px', backgroundColor: 'white', minWidth: '200px'
+            }}
+          >
+            <option value="">Todas las subcategorías</option>
+            {subcategoriasDisponibles.map((s) => (
+              <option key={s.id} value={s.id}>{s.nombre}</option>
+            ))}
+          </select>
+        )}
+
+        <select
+          value={estadoStockFiltro}
+          onChange={(e) => setEstadoStockFiltro(e.target.value)}
+          style={{
+            padding: '10px 14px', border: '1px solid #E0E8F5', borderRadius: '8px',
+            fontSize: '14px', backgroundColor: 'white', minWidth: '160px'
+          }}
+        >
+          <option value="">Todos los stocks</option>
+          <option value="bajo">Stock bajo</option>
+          <option value="ok">OK</option>
+        </select>
+
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            onClick={() => setOrden('az')}
+            style={{
+              padding: '10px 14px', borderRadius: '8px', border: 'none', fontSize: '13px',
+              fontWeight: 600, cursor: 'pointer',
+              backgroundColor: orden === 'az' ? '#1A6DD4' : 'white',
+              color: orden === 'az' ? 'white' : '#0D1B3E',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
+            }}
+          >
+            A-Z
+          </button>
+          <button
+            onClick={() => setOrden('za')}
+            style={{
+              padding: '10px 14px', borderRadius: '8px', border: 'none', fontSize: '13px',
+              fontWeight: 600, cursor: 'pointer',
+              backgroundColor: orden === 'za' ? '#1A6DD4' : 'white',
+              color: orden === 'za' ? 'white' : '#0D1B3E',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
+            }}
+          >
+            Z-A
+          </button>
+        </div>
+      </div>
+
+      {esAdmin && seleccionados.size > 0 && (
+        <div style={{
+          display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '16px',
+          padding: '14px 16px', backgroundColor: '#EAF2FE', borderRadius: '8px', flexWrap: 'wrap'
+        }}>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#0D1B3E' }}>
+            {seleccionados.size} de {filtrados.length} seleccionado{seleccionados.size === 1 ? '' : 's'}
+          </span>
+
+          <button
+            onClick={() => abrirLote('existencia', 'llenar_referencia')}
+            style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer', backgroundColor: '#1A7A3E', color: 'white' }}
+          >
+            Llenar stock
+          </button>
+          <button
+            onClick={() => abrirLote()}
+            style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer', backgroundColor: '#1A6DD4', color: 'white' }}
+          >
+            Editar en lote
+          </button>
+          <button
+            onClick={() => setSeleccionados(new Set())}
+            style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer', backgroundColor: 'white', color: '#888' }}
+          >
+            Cancelar selección
+          </button>
+        </div>
+      )}
+
+      <div style={{ backgroundColor: 'white', borderRadius: '10px', overflowX: 'auto', overflowY: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '980px' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#F4F7FC', borderBottom: '1px solid #E0E8F5' }}>
+              {esAdmin && (
+                <th style={thStyle}>
+                  <input type="checkbox" checked={todosSeleccionados} onChange={toggleTodos} />
+                </th>
+              )}
+              <th style={thStyle}>Código</th>
+              <th style={thStyle}>Producto</th>
+              <th style={thStyle}>Categoría</th>
+              <th style={thStyle}>P. Venta</th>
+              <th style={thStyle}>P. Costo</th>
+              <th style={thStyle}>Existencia</th>
+              <th style={thStyle}>Mínimo</th>
+              <th style={thStyle}>Máximo</th>
+              <th style={thStyle}>Stock</th>
+              {esAdmin && <th style={thStyle}></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {visibles.map((i) => {
+              const bajo = esStockBajo(i)
+              return (
+                <tr key={i.id} style={{ borderBottom: '1px solid #F0F4FB' }}>
+                  {esAdmin && (
+                    <td style={tdStyle}>
+                      <input type="checkbox" checked={seleccionados.has(i.id)} onChange={() => toggleUno(i.id)} />
+                    </td>
+                  )}
+                  <td style={tdStyle}>{i.productos?.codigo}</td>
+                  <td style={tdStyle}>{i.productos?.nombre}</td>
+                  <td style={tdStyle}>{i.productos?.categorias?.nombre || '—'}</td>
+                  <td style={tdStyle}>${i.productos?.precio_venta?.toFixed(2)}</td>
+                  <td style={tdStyle}>${i.productos?.precio_costo?.toFixed(2)}</td>
+                  <td style={{ ...tdStyle, fontWeight: 600, color: bajo ? '#C0392B' : '#333' }}>
+                    {i.existencia}
+                  </td>
+                  <td style={tdStyle}>{i.inventario_minimo}</td>
+                  <td style={tdStyle}>{i.inventario_maximo}</td>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    <span style={{
+                      fontSize: '11px', padding: '3px 10px', borderRadius: '999px',
+                      backgroundColor: bajo ? '#FDE8E8' : '#E8F7EE',
+                      color: bajo ? '#B81C1C' : '#1A7A3E', whiteSpace: 'nowrap',
+                    }}>
+                      {bajo ? 'Stock bajo' : 'OK'}
+                    </span>
+                  </td>
+                  {esAdmin && (
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <button
+                          onClick={() => setEditando(i)}
+                          style={{ fontSize: '12px', color: '#1A6DD4', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => abrirImagen(i)}
+                          style={{ fontSize: '12px', color: '#1A7A3E', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          {i.productos?.imagen_url ? 'Cambiar imagen' : '+ Imagen'}
+                        </button>
+                        <button
+                          onClick={() => borrarProducto(i)}
+                          disabled={borrandoId === i.productos?.id}
+                          style={{ fontSize: '12px', color: '#B81C1C', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          {borrandoId === i.productos?.id ? 'Borrando...' : 'Borrar'}
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {filtrados.length > 100 && (
+        <p style={{ color: '#888', fontSize: '13px', marginTop: '12px' }}>
+          Mostrando 100 de {filtrados.length} resultados. Sigue escribiendo o filtrando para ver más.
+        </p>
+      )}
+
+      {editando && editando.productos && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <form onSubmit={guardarCambios} style={{
+            backgroundColor: 'white', borderRadius: '12px', padding: '28px', width: '420px',
+            maxHeight: '90vh', overflowY: 'auto',
+          }}>
+            <h2 style={{ color: '#0D1B3E', fontSize: '18px', marginBottom: '4px' }}>
+              Editar producto e inventario
+            </h2>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '20px' }}>
+              {editando.productos.nombre}
+            </p>
+
+            <label style={labelStyle}>Código</label>
+            <input
+              value={editando.productos.codigo || ''}
+              onChange={(e) => actualizarProductoEditando({ codigo: e.target.value })}
+              style={inputStyle}
+            />
+
+            <label style={labelStyle}>Nombre</label>
+            <input
+              value={editando.productos.nombre || ''}
+              onChange={(e) => actualizarProductoEditando({ nombre: e.target.value })}
+              style={inputStyle}
+            />
+
+            <label style={labelStyle}>Categoría</label>
+            <select
+              value={editando.productos.categoria_id || ''}
+              onChange={(e) => actualizarProductoEditando({ categoria_id: e.target.value })}
+              style={inputStyle}
+            >
+              <option value="">Sin categoría</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.categoria_padre ? '— ' : ''}{c.nombre}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>P. Costo</label>
+                <input
+                  type="number" step="0.01"
+                  value={editando.productos.precio_costo || 0}
+                  onChange={(e) => actualizarProductoEditando({ precio_costo: parseFloat(e.target.value) })}
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>P. Venta</label>
+                <input
+                  type="number" step="0.01"
+                  value={editando.productos.precio_venta || 0}
+                  onChange={(e) => actualizarProductoEditando({ precio_venta: parseFloat(e.target.value) })}
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>P. Mayoreo</label>
+                <input
+                  type="number" step="0.01"
+                  value={editando.productos.precio_mayoreo || 0}
+                  onChange={(e) => actualizarProductoEditando({ precio_mayoreo: parseFloat(e.target.value) })}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <hr style={{ border: 'none', borderTop: '1px solid #E0E8F5', margin: '16px 0' }} />
+
+            <label style={labelStyle}>Existencia actual</label>
+            <input
+              type="number"
+              value={editando.existencia}
+              onChange={(e) => setEditando({ ...editando, existencia: parseFloat(e.target.value) })}
+              style={inputStyle}
+            />
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Inventario mínimo</label>
+                <input
+                  type="number"
+                  value={editando.inventario_minimo}
+                  onChange={(e) => setEditando({ ...editando, inventario_minimo: parseInt(e.target.value) })}
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Inventario máximo</label>
+                <input
+                  type="number"
+                  value={editando.inventario_maximo}
+                  onChange={(e) => setEditando({ ...editando, inventario_maximo: parseInt(e.target.value) })}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button
+                type="button"
+                onClick={() => setEditando(null)}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#F0F4FB', color: '#888', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={guardando}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#1A6DD4', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                {guardando ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {mostrarAgregar && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white', borderRadius: '12px', padding: '28px', width: '420px',
+            maxHeight: '90vh', overflowY: 'auto',
+          }}>
+            <h2 style={{ color: '#0D1B3E', fontSize: '18px', marginBottom: '4px' }}>
+              Agregar producto
+            </h2>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '20px' }}>
+              Se agrega a las 3 sucursales. La existencia inicial solo aplica a {sucursales.find((s) => s.id === sucursalActiva)?.nombre || 'esta sucursal'}; las demás empiezan en 0.
+            </p>
+
+            {errorAgregar && (
+              <p style={{ color: '#B81C1C', fontSize: '13px', marginBottom: '12px', backgroundColor: '#FDE8E8', padding: '10px', borderRadius: '6px' }}>
+                {errorAgregar}
+              </p>
+            )}
+
+            <label style={labelStyle}>Código</label>
+            <input
+              value={nuevoProducto.codigo}
+              onChange={(e) => setNuevoProducto({ ...nuevoProducto, codigo: e.target.value })}
+              style={inputStyle}
+            />
+
+            <label style={labelStyle}>Nombre</label>
+            <input
+              value={nuevoProducto.nombre}
+              onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })}
+              style={inputStyle}
+            />
+
+            <label style={labelStyle}>Categoría</label>
+            <select
+              value={nuevoProducto.categoria_id}
+              onChange={(e) => setNuevoProducto({ ...nuevoProducto, categoria_id: e.target.value })}
+              style={inputStyle}
+            >
+              <option value="">Sin categoría</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.categoria_padre ? '— ' : ''}{c.nombre}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>P. Costo</label>
+                <input
+                  type="number" step="0.01"
+                  value={nuevoProducto.precio_costo}
+                  onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio_costo: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>P. Venta</label>
+                <input
+                  type="number" step="0.01"
+                  value={nuevoProducto.precio_venta}
+                  onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio_venta: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>P. Mayoreo</label>
+                <input
+                  type="number" step="0.01"
+                  value={nuevoProducto.precio_mayoreo}
+                  onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio_mayoreo: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <hr style={{ border: 'none', borderTop: '1px solid #E0E8F5', margin: '16px 0' }} />
+
+            <label style={labelStyle}>Existencia inicial</label>
+            <input
+              type="number"
+              value={nuevoProducto.existencia}
+              onChange={(e) => setNuevoProducto({ ...nuevoProducto, existencia: e.target.value })}
+              style={inputStyle}
+            />
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Inventario mínimo</label>
+                <input
+                  type="number"
+                  value={nuevoProducto.inventario_minimo}
+                  onChange={(e) => setNuevoProducto({ ...nuevoProducto, inventario_minimo: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Inventario máximo</label>
+                <input
+                  type="number"
+                  value={nuevoProducto.inventario_maximo}
+                  onChange={(e) => setNuevoProducto({ ...nuevoProducto, inventario_maximo: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button
+                onClick={() => setMostrarAgregar(false)}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#F0F4FB', color: '#888', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={agregarProducto}
+                disabled={agregando}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#1A6DD4', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                {agregando ? 'Guardando...' : 'Agregar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {imagenPara && imagenPara.productos && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white', borderRadius: '12px', padding: '28px', width: '380px',
+          }}>
+            <h2 style={{ color: '#0D1B3E', fontSize: '18px', marginBottom: '4px' }}>
+              Imagen del producto
+            </h2>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
+              {imagenPara.productos.nombre}
+            </p>
+
+            {errorImagen && (
+              <p style={{ color: '#B81C1C', fontSize: '13px', marginBottom: '12px', backgroundColor: '#FDE8E8', padding: '10px', borderRadius: '6px' }}>
+                {errorImagen}
+              </p>
+            )}
+
+            <div style={{
+              width: '100%', height: '200px', borderRadius: '8px', backgroundColor: '#F4F7FC',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '14px',
+              border: '1px solid #E0E8F5',
+            }}>
+              {previewImagen || imagenPara.productos.imagen_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewImagen || imagenPara.productos.imagen_url || ''}
+                  alt={imagenPara.productos.nombre}
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                <span style={{ color: '#888', fontSize: '13px' }}>Sin imagen</span>
+              )}
+            </div>
+
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => elegirArchivoImagen(e.target.files?.[0])}
+              style={{ fontSize: '13px', marginBottom: '8px', width: '100%' }}
+            />
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+              <button
+                type="button"
+                onClick={() => setImagenPara(null)}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#F0F4FB', color: '#888', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+              {imagenPara.productos.imagen_url && (
+                <button
+                  type="button"
+                  onClick={quitarImagen}
+                  disabled={subiendoImagen}
+                  style={{ flex: 1, padding: '12px', backgroundColor: '#FDE8E8', color: '#B81C1C', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: 'pointer' }}
+                >
+                  Quitar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={subirImagen}
+                disabled={subiendoImagen || !archivoImagen}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#1A6DD4', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', opacity: !archivoImagen ? 0.5 : 1 }}
+              >
+                {subiendoImagen ? 'Subiendo...' : 'Subir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mostrarLote && (
+        <EdicionLoteModal
+          items={inventario
+            .filter((i) => seleccionados.has(i.id))
+            .map((i) => ({ id: i.id, nombre: i.productos?.nombre || '', productoId: i.productos?.id || '' }))}
+          campos={camposLote}
+          campoInicial={loteInicial.campo}
+          modoInicial={loteInicial.modo}
+          obtenerValorActual={(itemId, campo) => {
+            const i = inventario.find((x) => x.id === itemId)
+            if (!i) return 0
+            if (campo in i) return (i as unknown as Record<string, number>)[campo] ?? 0
+            return (i.productos as unknown as Record<string, number | string | boolean>)?.[campo] ?? ''
+          }}
+          aplicando={aplicandoLote}
+          onAplicar={manejarAplicarLote}
+          onCerrar={() => setMostrarLote(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+const thStyle: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: '12px', color: '#888', fontWeight: 600, whiteSpace: 'nowrap' }
+const tdStyle: React.CSSProperties = { padding: '12px 16px', fontSize: '13px', color: '#333' }
+const labelStyle: React.CSSProperties = { fontSize: '12px', color: '#0D1B3E', fontWeight: 600, display: 'block', marginBottom: '4px', marginTop: '12px' }
+const inputStyle: React.CSSProperties = { width: '100%', padding: '9px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '14px', marginBottom: '4px' }
