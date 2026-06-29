@@ -74,6 +74,7 @@ export default function VentaRapidaPanel({
   promociones,
   configuracion,
   usuario,
+  esAdmin = false,
   onVentaRegistrada,
 }: {
   clientes: Cliente[]
@@ -83,6 +84,7 @@ export default function VentaRapidaPanel({
   promociones: Promocion[]
   configuracion: Configuracion
   usuario: Usuario
+  esAdmin?: boolean
   onVentaRegistrada: () => void
 }) {
   const supabase = createClient()
@@ -571,34 +573,36 @@ export default function VentaRapidaPanel({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', marginTop: '14px' }}>
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <label style={{ fontSize: '12px', color: '#888' }}>IVA %</label>
-          <input type="number" step="0.1" value={ivaCalc} onChange={(e) => cambiarIva(e.target.value)} style={{ width: '60px', padding: '6px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px' }} />
+      {esAdmin && (
+        <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', marginTop: '14px' }}>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <label style={{ fontSize: '12px', color: '#888' }}>IVA %</label>
+            <input type="number" step="0.1" value={ivaCalc} onChange={(e) => cambiarIva(e.target.value)} style={{ width: '60px', padding: '6px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px' }} />
+          </div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <label style={{ fontSize: '12px', color: '#888' }}>Ganancia % para todos</label>
+            <input type="number" step="1" placeholder="ej. 70" value={margenBulk} onChange={(e) => setMargenBulk(e.target.value)} style={{ width: '70px', padding: '6px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px' }} />
+            <button
+              onClick={aplicarCalculoATodos}
+              disabled={carrito.length === 0 || margenBulk === ''}
+              style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '12px', fontWeight: 600, cursor: 'pointer', backgroundColor: '#1A6DD4', color: 'white', opacity: (carrito.length === 0 || margenBulk === '') ? 0.5 : 1 }}
+            >
+              Aplicar a todos
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <label style={{ fontSize: '12px', color: '#888' }}>Ganancia % para todos</label>
-          <input type="number" step="1" placeholder="ej. 70" value={margenBulk} onChange={(e) => setMargenBulk(e.target.value)} style={{ width: '70px', padding: '6px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px' }} />
-          <button
-            onClick={aplicarCalculoATodos}
-            disabled={carrito.length === 0 || margenBulk === ''}
-            style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '12px', fontWeight: 600, cursor: 'pointer', backgroundColor: '#1A6DD4', color: 'white', opacity: (carrito.length === 0 || margenBulk === '') ? 0.5 : 1 }}
-          >
-            Aplicar a todos
-          </button>
-        </div>
-      </div>
+      )}
 
       <div style={{ marginTop: '10px', backgroundColor: '#F4F7FC', borderRadius: '8px', overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: esAdmin ? '800px' : '540px' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #E0E8F5' }}>
               <th style={thStyle}>Producto</th>
               <th style={thStyle}>Cantidad</th>
-              <th style={thStyle}>Costo</th>
-              <th style={thStyle}>% Ganancia</th>
+              {esAdmin && <th style={thStyle}>Costo</th>}
+              {esAdmin && <th style={thStyle}>% Ganancia</th>}
               <th style={thStyle}>Precio</th>
-              <th style={thStyle}>IVA</th>
+              {esAdmin && <th style={thStyle}>IVA</th>}
               <th style={thStyle}>Subtotal</th>
               <th style={thStyle}></th>
             </tr>
@@ -636,22 +640,26 @@ export default function VentaRapidaPanel({
                       }}
                     />
                   </td>
-                  <td style={tdStyle}>
-                    <input
-                      type="number" step="0.01" value={i.precio_costo}
-                      onChange={(e) => actualizarItem(i.id, 'precio_costo', parseFloat(e.target.value) || 0)}
-                      title="Costo del producto; si no está registrado en el catálogo, captúralo aquí para esta venta"
-                      style={{ width: '70px', padding: '6px', border: '1px solid #E0E8F5', borderRadius: '6px' }}
-                    />
-                  </td>
-                  <td style={tdStyle}>
-                    <input
-                      type="number" step="1" value={margenMostrado(i)}
-                      onChange={(e) => cambiarMargenItem(i, e.target.value)}
-                      title="% de ganancia sobre el costo; cambia el precio al instante"
-                      style={{ width: '60px', padding: '6px', border: '1px solid #E0E8F5', borderRadius: '6px' }}
-                    />
-                  </td>
+                  {esAdmin && (
+                    <td style={tdStyle}>
+                      <input
+                        type="number" step="0.01" value={i.precio_costo}
+                        onChange={(e) => actualizarItem(i.id, 'precio_costo', parseFloat(e.target.value) || 0)}
+                        title="Costo del producto"
+                        style={{ width: '70px', padding: '6px', border: '1px solid #E0E8F5', borderRadius: '6px' }}
+                      />
+                    </td>
+                  )}
+                  {esAdmin && (
+                    <td style={tdStyle}>
+                      <input
+                        type="number" step="1" value={margenMostrado(i)}
+                        onChange={(e) => cambiarMargenItem(i, e.target.value)}
+                        title="% de ganancia sobre el costo"
+                        style={{ width: '60px', padding: '6px', border: '1px solid #E0E8F5', borderRadius: '6px' }}
+                      />
+                    </td>
+                  )}
                   <td style={tdStyle}>
                     <input
                       type="number" step="0.01" value={i.precio_unitario}
@@ -659,7 +667,7 @@ export default function VentaRapidaPanel({
                       style={{ width: '80px', padding: '6px', border: '1px solid #E0E8F5', borderRadius: '6px' }}
                     />
                   </td>
-                  <td style={tdStyle}>${ivaDeLinea(i.precio_unitario, i.cantidad).toFixed(2)}</td>
+                  {esAdmin && <td style={tdStyle}>${ivaDeLinea(i.precio_unitario, i.cantidad).toFixed(2)}</td>}
                   <td style={tdStyle}>${(i.cantidad * i.precio_unitario).toFixed(2)}</td>
                   <td style={tdStyle}>
                     <button
@@ -674,7 +682,7 @@ export default function VentaRapidaPanel({
             })}
             {carrito.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: '#888' }}>
+                <td colSpan={esAdmin ? 8 : 5} style={{ ...tdStyle, textAlign: 'center', color: '#888' }}>
                   Escanea o busca el primer producto
                 </td>
               </tr>
@@ -683,9 +691,11 @@ export default function VentaRapidaPanel({
         </table>
       </div>
 
-      <p style={{ textAlign: 'right', fontSize: '13px', color: '#888', marginTop: '12px' }}>
-        IVA incluido: ${totalIva.toFixed(2)}
-      </p>
+      {esAdmin && (
+        <p style={{ textAlign: 'right', fontSize: '13px', color: '#888', marginTop: '12px' }}>
+          IVA incluido: ${totalIva.toFixed(2)}
+        </p>
+      )}
       <p style={{ textAlign: 'right', fontSize: '20px', fontWeight: 700, color: '#0D1B3E' }}>
         Total: ${total.toFixed(2)}
       </p>

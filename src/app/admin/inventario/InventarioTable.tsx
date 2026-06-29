@@ -19,6 +19,8 @@ type Producto = {
   precio_mayoreo: number
   activo: boolean
   imagen_url?: string | null
+  imagen_url_hover?: string | null
+  descripcion?: string | null
 }
 
 type Inventario = {
@@ -88,8 +90,15 @@ export default function InventarioTable({
   const [imagenPara, setImagenPara] = useState<Inventario | null>(null)
   const [archivoImagen, setArchivoImagen] = useState<File | null>(null)
   const [previewImagen, setPreviewImagen] = useState<string>('')
+  const [archivoImagenHover, setArchivoImagenHover] = useState<File | null>(null)
+  const [previewImagenHover, setPreviewImagenHover] = useState<string>('')
+  const [descripcionImagen, setDescripcionImagen] = useState('')
   const [subiendoImagen, setSubiendoImagen] = useState(false)
   const [errorImagen, setErrorImagen] = useState('')
+  const [mostrarMargen, setMostrarMargen] = useState(false)
+  const [margenPct, setMargenPct] = useState(70)
+  const [categoriaMargen, setCategoriaMargen] = useState('')
+  const [aplicandoMargen, setAplicandoMargen] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -230,6 +239,46 @@ export default function InventarioTable({
 
     setSeleccionados(new Set())
     setMostrarLote(false)
+    router.refresh()
+  }
+
+  async function aplicarMargen() {
+    const idsCategoria = categoriaMargen
+      ? [categoriaMargen, ...categorias.filter(c => c.categoria_padre === categoriaMargen).map(c => c.id)]
+      : []
+
+    const objetivos = inventario.filter(i => {
+      const costo = i.productos?.precio_costo ?? 0
+      if (costo <= 0) return false
+      if (categoriaMargen) return idsCategoria.includes(i.productos?.categoria_id || '')
+      return true
+    })
+
+    if (objetivos.length === 0) {
+      alert('No hay productos con precio de costo en la selección.')
+      return
+    }
+
+    if (!confirm(`Se actualizará el precio de venta de ${objetivos.length} producto(s) aplicando ${margenPct}% de ganancia sobre el costo. ¿Continuar?`)) return
+
+    setAplicandoMargen(true)
+
+    const LOTE = 50
+    let errores = 0
+    for (let i = 0; i < objetivos.length; i += LOTE) {
+      const trozo = objetivos.slice(i, i + LOTE)
+      const resultados = await Promise.allSettled(
+        trozo.map(inv => {
+          const nuevoPrecio = parseFloat(((inv.productos!.precio_costo) * (1 + margenPct / 100)).toFixed(2))
+          return supabase.from('productos').update({ precio_venta: nuevoPrecio }).eq('id', inv.productos!.id)
+        })
+      )
+      errores += resultados.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error)).length
+    }
+
+    setAplicandoMargen(false)
+    setMostrarMargen(false)
+    if (errores > 0) alert(`Se completó con ${errores} error(es). Verifica los precios.`)
     router.refresh()
   }
 
@@ -377,6 +426,9 @@ export default function InventarioTable({
     setImagenPara(i)
     setArchivoImagen(null)
     setPreviewImagen('')
+    setArchivoImagenHover(null)
+    setPreviewImagenHover('')
+    setDescripcionImagen(i.productos?.descripcion || '')
     setErrorImagen('')
   }
 
@@ -395,38 +447,64 @@ export default function InventarioTable({
     setPreviewImagen(URL.createObjectURL(archivo))
   }
 
-  async function subirImagen() {
-    if (!imagenPara?.productos || !archivoImagen) return
+  function elegirArchivoImagenHover(archivo: File | undefined) {
+    if (!archivo) return
+    if (!archivo.type.startsWith('image/')) {
+      setErrorImagen('Selecciona un archivo de imagen')
+      return
+    }
+    if (archivo.size > 5 * 1024 * 1024) {
+      setErrorImagen('La imagen no debe pesar más de 5MB')
+      return
+    }
+    setErrorImagen('')
+    setArchivoImagenHover(archivo)
+    setPreviewImagenHover(URL.createObjectURL(archivo))
+  }
+
+  async function subirImagenAStorage(archivo: File, sufijo: string, productoId: string) {
+    const extension = archivo.name.split('.').pop() || 'jpg'
+    const ruta = `${productoId}${sufijo}.${extension}`
+
+    const { error: errorSubida } = await supabase.storage
+      .from('productos')
+      .upload(ruta, archivo, { upsert: true })
+
+    if (errorSubida) throw new Error('Error al subir la imagen: ' + errorSubida.message)
+
+    const { data: urlData } = supabase.storage.from('productos').getPublicUrl(ruta)
+    return `${urlData.publicUrl}?t=${Date.now()}`
+  }
+
+  async function guardarImagen() {
+    if (!imagenPara?.productos) return
     const productoId = imagenPara.productos.id
 
     setSubiendoImagen(true)
     setErrorImagen('')
 
-    const extension = archivoImagen.name.split('.').pop() || 'jpg'
-    const ruta = `${productoId}.${extension}`
+    const cambios: { imagen_url?: string; imagen_url_hover?: string; descripcion: string | null } = {
+      descripcion: descripcionImagen.trim() || null,
+    }
 
-    const { error: errorSubida } = await supabase.storage
-      .from('productos')
-      .upload(ruta, archivoImagen, { upsert: true })
-
-    if (errorSubida) {
+    try {
+      if (archivoImagen) cambios.imagen_url = await subirImagenAStorage(archivoImagen, '', productoId)
+      if (archivoImagenHover) cambios.imagen_url_hover = await subirImagenAStorage(archivoImagenHover, '-hover', productoId)
+    } catch (err) {
       setSubiendoImagen(false)
-      setErrorImagen('Error al subir la imagen: ' + errorSubida.message)
+      setErrorImagen(err instanceof Error ? err.message : 'Error al subir la imagen')
       return
     }
 
-    const { data: urlData } = supabase.storage.from('productos').getPublicUrl(ruta)
-    const urlConVersion = `${urlData.publicUrl}?t=${Date.now()}`
-
     const { error: errorUpdate } = await supabase
       .from('productos')
-      .update({ imagen_url: urlConVersion })
+      .update(cambios)
       .eq('id', productoId)
 
     setSubiendoImagen(false)
 
     if (errorUpdate) {
-      setErrorImagen('Error al guardar la imagen: ' + errorUpdate.message)
+      setErrorImagen('Error al guardar los cambios: ' + errorUpdate.message)
       return
     }
 
@@ -441,6 +519,26 @@ export default function InventarioTable({
     const { error } = await supabase
       .from('productos')
       .update({ imagen_url: null })
+      .eq('id', imagenPara.productos.id)
+
+    setSubiendoImagen(false)
+
+    if (error) {
+      setErrorImagen('Error al quitar la imagen: ' + error.message)
+      return
+    }
+
+    setImagenPara(null)
+    router.refresh()
+  }
+
+  async function quitarImagenHover() {
+    if (!imagenPara?.productos) return
+    setSubiendoImagen(true)
+
+    const { error } = await supabase
+      .from('productos')
+      .update({ imagen_url_hover: null })
       .eq('id', imagenPara.productos.id)
 
     setSubiendoImagen(false)
@@ -530,7 +628,115 @@ export default function InventarioTable({
         >
           Excel (inventario completo)
         </button>
+
+        {esAdmin && (
+          <button
+            onClick={() => setMostrarMargen(true)}
+            style={{
+              padding: '8px 16px', borderRadius: '8px', border: 'none',
+              fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              backgroundColor: '#0D1B3E', color: 'white',
+            }}
+          >
+            % Ganancia en lote
+          </button>
+        )}
       </div>
+
+      {/* ── Modal: ajuste de precio por margen de ganancia ── */}
+      {mostrarMargen && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 50,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+        }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '480px', boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
+            <h2 style={{ color: '#0D1B3E', fontSize: '17px', fontWeight: 700, marginBottom: '6px' }}>
+              Ajustar precio de venta por % de ganancia
+            </h2>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '22px' }}>
+              El nuevo precio de venta se calcula como: <strong>Costo × (1 + %)</strong>. Solo se actualizan productos que tienen precio de costo registrado.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: '#0D1B3E' }}>
+                Margen de ganancia (%)
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10000}
+                    value={margenPct}
+                    onChange={e => setMargenPct(parseFloat(e.target.value) || 0)}
+                    style={{ width: '110px', padding: '10px 12px', border: '1px solid #E0E8F5', borderRadius: '8px', fontSize: '16px', fontWeight: 700 }}
+                  />
+                  <span style={{ fontSize: '13px', color: '#888' }}>
+                    Ej. con costo $100 → precio de venta <strong style={{ color: '#1A7A3E' }}>${(100 * (1 + margenPct / 100)).toFixed(2)}</strong>
+                  </span>
+                </div>
+              </label>
+
+              <label style={{ fontSize: '13px', fontWeight: 600, color: '#0D1B3E' }}>
+                Aplicar a
+                <select
+                  value={categoriaMargen}
+                  onChange={e => setCategoriaMargen(e.target.value)}
+                  style={{ display: 'block', width: '100%', marginTop: '6px', padding: '10px 12px', border: '1px solid #E0E8F5', borderRadius: '8px', fontSize: '13px' }}
+                >
+                  <option value="">Todo el inventario</option>
+                  {categorias.filter(c => !c.categoria_padre).map(c => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                  {categorias.filter(c => c.categoria_padre).map(c => (
+                    <option key={c.id} value={c.id}>— {c.nombre}</option>
+                  ))}
+                </select>
+              </label>
+
+              {(() => {
+                const idsCategoria = categoriaMargen
+                  ? [categoriaMargen, ...categorias.filter(c => c.categoria_padre === categoriaMargen).map(c => c.id)]
+                  : []
+                const cuenta = inventario.filter(i => {
+                  const costo = i.productos?.precio_costo ?? 0
+                  if (costo <= 0) return false
+                  if (categoriaMargen) return idsCategoria.includes(i.productos?.categoria_id || '')
+                  return true
+                }).length
+                return (
+                  <div style={{ padding: '12px 14px', borderRadius: '8px', backgroundColor: cuenta > 0 ? '#E8F7EE' : '#FDE8E8' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: cuenta > 0 ? '#1A7A3E' : '#B81C1C' }}>
+                      {cuenta > 0
+                        ? `${cuenta} producto${cuenta === 1 ? '' : 's'} se actualizarán`
+                        : 'Ningún producto con costo en esta categoría'}
+                    </span>
+                    {inventario.filter(i => !(i.productos?.precio_costo ?? 0)).length > 0 && (
+                      <p style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                        Los que no tienen costo registrado se omiten.
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
+              <button
+                onClick={() => setMostrarMargen(false)}
+                style={{ flex: 1, padding: '11px', borderRadius: '8px', border: 'none', backgroundColor: '#F0F4FB', color: '#888', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={aplicarMargen}
+                disabled={aplicandoMargen}
+                style={{ flex: 1, padding: '11px', borderRadius: '8px', border: 'none', backgroundColor: '#1A6DD4', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: aplicandoMargen ? 0.6 : 1 }}
+              >
+                {aplicandoMargen ? 'Aplicando...' : 'Aplicar precios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input
@@ -646,7 +852,7 @@ export default function InventarioTable({
       )}
 
       <div style={{ backgroundColor: 'white', borderRadius: '10px', overflowX: 'auto', overflowY: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '980px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1080px' }}>
           <thead>
             <tr style={{ backgroundColor: '#F4F7FC', borderBottom: '1px solid #E0E8F5' }}>
               {esAdmin && (
@@ -658,7 +864,8 @@ export default function InventarioTable({
               <th style={thStyle}>Producto</th>
               <th style={thStyle}>Categoría</th>
               <th style={thStyle}>P. Venta</th>
-              <th style={thStyle}>P. Costo</th>
+              {esAdmin && <th style={thStyle}>P. Costo</th>}
+              {esAdmin && <th style={thStyle}>% Ganancia</th>}
               <th style={thStyle}>Existencia</th>
               <th style={thStyle}>Mínimo</th>
               <th style={thStyle}>Máximo</th>
@@ -680,7 +887,26 @@ export default function InventarioTable({
                   <td style={tdStyle}>{i.productos?.nombre}</td>
                   <td style={tdStyle}>{i.productos?.categorias?.nombre || '—'}</td>
                   <td style={tdStyle}>${i.productos?.precio_venta?.toFixed(2)}</td>
-                  <td style={tdStyle}>${i.productos?.precio_costo?.toFixed(2)}</td>
+                  {esAdmin && <td style={tdStyle}>${i.productos?.precio_costo?.toFixed(2)}</td>}
+                  {esAdmin && (
+                    <td style={tdStyle}>
+                      {(i.productos?.precio_costo ?? 0) > 0
+                        ? (() => {
+                            const ganancia = ((i.productos!.precio_venta - i.productos!.precio_costo) / i.productos!.precio_costo) * 100
+                            return (
+                              <span style={{
+                                fontSize: '12px', padding: '2px 8px', borderRadius: '999px', whiteSpace: 'nowrap',
+                                backgroundColor: ganancia >= 0 ? '#E8F7EE' : '#FDE8E8',
+                                color: ganancia >= 0 ? '#1A7A3E' : '#B81C1C',
+                              }}>
+                                {ganancia >= 0 ? '+' : ''}{ganancia.toFixed(1)}%
+                              </span>
+                            )
+                          })()
+                        : <span style={{ color: '#888' }}>—</span>
+                      }
+                    </td>
+                  )}
                   <td style={{ ...tdStyle, fontWeight: 600, color: bajo ? '#C0392B' : '#333' }}>
                     {i.existencia}
                   </td>
@@ -997,10 +1223,10 @@ export default function InventarioTable({
           alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }}>
           <div style={{
-            backgroundColor: 'white', borderRadius: '12px', padding: '28px', width: '380px',
+            backgroundColor: 'white', borderRadius: '12px', padding: '28px', width: '420px', maxHeight: '90vh', overflowY: 'auto',
           }}>
             <h2 style={{ color: '#0D1B3E', fontSize: '18px', marginBottom: '4px' }}>
-              Imagen del producto
+              Imagen y descripción del producto
             </h2>
             <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
               {imagenPara.productos.nombre}
@@ -1012,9 +1238,12 @@ export default function InventarioTable({
               </p>
             )}
 
+            <p style={{ color: '#0D1B3E', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
+              Imagen principal
+            </p>
             <div style={{
-              width: '100%', height: '200px', borderRadius: '8px', backgroundColor: '#F4F7FC',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '14px',
+              width: '100%', height: '180px', borderRadius: '8px', backgroundColor: '#F4F7FC',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '10px',
               border: '1px solid #E0E8F5',
             }}>
               {previewImagen || imagenPara.productos.imagen_url ? (
@@ -1028,12 +1257,75 @@ export default function InventarioTable({
                 <span style={{ color: '#888', fontSize: '13px' }}>Sin imagen</span>
               )}
             </div>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => elegirArchivoImagen(e.target.files?.[0])}
+                style={{ fontSize: '13px', flex: 1 }}
+              />
+              {imagenPara.productos.imagen_url && (
+                <button
+                  type="button"
+                  onClick={quitarImagen}
+                  disabled={subiendoImagen}
+                  style={{ padding: '6px 12px', backgroundColor: '#FDE8E8', color: '#B81C1C', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+                >
+                  Quitar
+                </button>
+              )}
+            </div>
 
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => elegirArchivoImagen(e.target.files?.[0])}
-              style={{ fontSize: '13px', marginBottom: '8px', width: '100%' }}
+            <p style={{ color: '#0D1B3E', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>
+              Imagen al pasar el mouse (opcional)
+            </p>
+            <p style={{ color: '#888', fontSize: '12px', marginBottom: '6px' }}>
+              Se muestra en el catálogo público cuando el cliente pasa el cursor sobre la imagen principal.
+            </p>
+            <div style={{
+              width: '100%', height: '180px', borderRadius: '8px', backgroundColor: '#F4F7FC',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '10px',
+              border: '1px solid #E0E8F5',
+            }}>
+              {previewImagenHover || imagenPara.productos.imagen_url_hover ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewImagenHover || imagenPara.productos.imagen_url_hover || ''}
+                  alt={imagenPara.productos.nombre}
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                <span style={{ color: '#888', fontSize: '13px' }}>Sin imagen</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => elegirArchivoImagenHover(e.target.files?.[0])}
+                style={{ fontSize: '13px', flex: 1 }}
+              />
+              {imagenPara.productos.imagen_url_hover && (
+                <button
+                  type="button"
+                  onClick={quitarImagenHover}
+                  disabled={subiendoImagen}
+                  style={{ padding: '6px 12px', backgroundColor: '#FDE8E8', color: '#B81C1C', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+                >
+                  Quitar
+                </button>
+              )}
+            </div>
+
+            <p style={{ color: '#0D1B3E', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
+              Descripción del producto
+            </p>
+            <textarea
+              value={descripcionImagen}
+              onChange={(e) => setDescripcionImagen(e.target.value)}
+              placeholder="Breve descripción que verá el cliente en la página del producto..."
+              rows={4}
+              style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #E0E8F5', fontSize: '13px', resize: 'vertical', marginBottom: '4px' }}
             />
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
@@ -1044,23 +1336,13 @@ export default function InventarioTable({
               >
                 Cancelar
               </button>
-              {imagenPara.productos.imagen_url && (
-                <button
-                  type="button"
-                  onClick={quitarImagen}
-                  disabled={subiendoImagen}
-                  style={{ flex: 1, padding: '12px', backgroundColor: '#FDE8E8', color: '#B81C1C', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: 'pointer' }}
-                >
-                  Quitar
-                </button>
-              )}
               <button
                 type="button"
-                onClick={subirImagen}
-                disabled={subiendoImagen || !archivoImagen}
-                style={{ flex: 1, padding: '12px', backgroundColor: '#1A6DD4', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', opacity: !archivoImagen ? 0.5 : 1 }}
+                onClick={guardarImagen}
+                disabled={subiendoImagen}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#1A6DD4', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', opacity: subiendoImagen ? 0.6 : 1 }}
               >
-                {subiendoImagen ? 'Subiendo...' : 'Subir'}
+                {subiendoImagen ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
           </div>

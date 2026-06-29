@@ -22,7 +22,7 @@ function calcularInicio(periodo: Periodo): Date {
 export default async function ReportesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; desde?: string; hasta?: string }>
+  searchParams: Promise<{ periodo?: string; desde?: string; hasta?: string; sucursal?: string }>
 }) {
   const { user, usuario } = await obtenerUsuarioActual()
   if (!user) redirect('/login')
@@ -30,6 +30,7 @@ export default async function ReportesPage({
 
   const supabase = await createClient()
   const params = await searchParams
+  const sucursalId = params.sucursal || ''
 
   let periodo: Periodo = 'hoy'
   let inicio: Date
@@ -46,23 +47,34 @@ export default async function ReportesPage({
     fin = new Date()
   }
 
-  const [{ data: ventas }, { data: itemsVendidos }, { data: ventasDetalladas }] = await Promise.all([
-    supabase
-      .from('ventas')
-      .select('id, total, sucursales(nombre)')
-      .gte('creado_en', inicio.toISOString())
-      .lte('creado_en', fin.toISOString()),
-    supabase
-      .from('venta_items')
-      .select('cantidad, subtotal, producto_id, productos(codigo, nombre), ventas!inner(creado_en)')
-      .gte('ventas.creado_en', inicio.toISOString())
-      .lte('ventas.creado_en', fin.toISOString()),
-    supabase
-      .from('ventas')
-      .select('id, folio, total, metodo_pago, creado_en, clientes(nombre), sucursales(nombre), venta_items(cantidad, precio_unitario, subtotal, productos(codigo, nombre))')
-      .gte('creado_en', inicio.toISOString())
-      .lte('creado_en', fin.toISOString())
-      .order('creado_en', { ascending: false }),
+  let qVentas = supabase
+    .from('ventas')
+    .select('id, total, sucursales(nombre)')
+    .gte('creado_en', inicio.toISOString())
+    .lte('creado_en', fin.toISOString())
+  let qItems = supabase
+    .from('venta_items')
+    .select('cantidad, subtotal, producto_id, productos(codigo, nombre), ventas!inner(creado_en, sucursal_id)')
+    .gte('ventas.creado_en', inicio.toISOString())
+    .lte('ventas.creado_en', fin.toISOString())
+  let qDetalladas = supabase
+    .from('ventas')
+    .select('id, folio, total, metodo_pago, creado_en, clientes(nombre), sucursales(nombre), venta_items(cantidad, precio_unitario, subtotal, productos(codigo, nombre))')
+    .gte('creado_en', inicio.toISOString())
+    .lte('creado_en', fin.toISOString())
+    .order('creado_en', { ascending: false })
+
+  if (sucursalId) {
+    qVentas = qVentas.eq('sucursal_id', sucursalId)
+    qItems = qItems.eq('ventas.sucursal_id', sucursalId)
+    qDetalladas = qDetalladas.eq('sucursal_id', sucursalId)
+  }
+
+  const [{ data: sucursales }, { data: ventas }, { data: itemsVendidos }, { data: ventasDetalladas }] = await Promise.all([
+    supabase.from('sucursales').select('id, nombre').order('creado_en'),
+    qVentas,
+    qItems,
+    qDetalladas,
   ])
 
   const totalPeriodo = (ventas || []).reduce((sum, v) => sum + (v.total || 0), 0)
@@ -103,6 +115,8 @@ export default async function ReportesPage({
         periodo={rangoPersonalizado ? '' : periodo}
         desde={params.desde || inicio.toISOString().slice(0, 10)}
         hasta={params.hasta || fin.toISOString().slice(0, 10)}
+        sucursalId={sucursalId}
+        sucursales={sucursales || []}
         totalPeriodo={totalPeriodo}
         numeroVentas={(ventas || []).length}
         productosVendidos={productosVendidos}

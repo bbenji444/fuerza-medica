@@ -15,11 +15,13 @@
   --color-fondo-claro: #F4F8FF;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
 }
 
 body {
@@ -34,4 +36,100 @@ input, select, textarea, option {
 
 input::placeholder {
   color: #999999 !important;
+}
+
+@keyframes marcas-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marcas-scroll {
+  animation: marcas-scroll 35s linear infinite;
+}
+
+/* ─── Admin panel — responsive móvil ─────────────────── */
+
+/* Botón hamburguesa (solo visible en móvil) */
+.admin-menu-trigger {
+  display: none;
+}
+
+/* Overlay oscuro detrás del sidebar cuando está abierto */
+.admin-sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 90;
+}
+
+/* Wrapper de tabla — permite scroll horizontal en móvil */
+.admin-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 767px) {
+  /* Sidebar oculto fuera de pantalla por defecto */
+  .admin-sidebar {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw !important;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+  }
+
+  /* Sidebar abierto — cubre toda la pantalla */
+  .admin-sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  /* El overlay no hace falta ya que el sidebar cubre todo */
+  .admin-sidebar-overlay {
+    display: none !important;
+  }
+
+  /* Botón hamburguesa visible */
+  .admin-menu-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 95;
+    width: 44px;
+    height: 44px;
+    background: #0D1B3E;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 22px;
+    cursor: pointer;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Botón cerrar visible dentro del sidebar */
+  .admin-sidebar-close {
+    display: flex !important;
+  }
+
+  /* Espacio para el botón hamburguesa fijo */
+  .admin-content > div {
+    padding-top: 64px !important;
+  }
+
+  /* Grid de KPIs: 2 columnas en móvil */
+  .admin-kpi-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
 }

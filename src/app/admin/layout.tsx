@@ -6,9 +6,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const rol = usuario?.rol || 'operador'
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', overflow: 'hidden' }}>
       <Sidebar rol={rol} />
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div className="admin-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
         {children}
       </div>
     </div>

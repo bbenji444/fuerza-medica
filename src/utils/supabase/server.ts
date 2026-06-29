@@ -22,6 +22,12 @@ export async function createClient() {
           }
         },
       },
+      global: {
+        // Next.js cachea fetch() por default — sin esto, una página dinámica podía
+        // seguir mostrando datos viejos de Supabase (ej. "Los más vendidos" vacío
+        // después de agregar el primer producto destacado, hasta el próximo build).
+        fetch: (url, options) => fetch(url, { ...options, cache: 'no-store' }),
+      },
     }
   )
 }

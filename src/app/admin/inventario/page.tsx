@@ -25,7 +25,7 @@ export default async function InventarioPage({
   const { data: inventario } = await supabase
     .from('inventario')
     .select(
-      'id, existencia, inventario_minimo, inventario_maximo, productos(id, codigo, nombre, categoria_id, categorias(nombre), precio_costo, precio_venta, precio_mayoreo, activo, imagen_url)'
+      'id, existencia, inventario_minimo, inventario_maximo, productos(id, codigo, nombre, categoria_id, categorias(nombre), precio_costo, precio_venta, precio_mayoreo, activo, imagen_url, imagen_url_hover, descripcion)'
     )
     .eq('sucursal_id', sucursalActiva)
     .order('productos(nombre)')

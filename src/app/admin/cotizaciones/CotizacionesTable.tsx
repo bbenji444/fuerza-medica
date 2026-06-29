@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
@@ -118,7 +118,7 @@ export default function CotizacionesTable({
     setExportando(null)
 
     if (error) {
-      alert('Error al obtener los productos de la cotización: ' + error.message)
+      alert('Error al obtener los productos de la cotizaciÃ³n: ' + error.message)
       return
     }
 
@@ -126,7 +126,7 @@ export default function CotizacionesTable({
   }
 
   async function borrarCotizacion(cotizacion: Cotizacion) {
-    if (!confirm(`¿Eliminar la cotización de ${cotizacion.clientes?.nombre || 'este cliente'}? Esta acción no se puede deshacer.`)) return
+    if (!confirm(`Â¿Eliminar la cotizaciÃ³n de ${cotizacion.clientes?.nombre || 'este cliente'}? Esta acciÃ³n no se puede deshacer.`)) return
 
     setBorrando(cotizacion.id)
 
@@ -137,7 +137,7 @@ export default function CotizacionesTable({
 
     if (errItems) {
       setBorrando(null)
-      alert('Error al eliminar los productos de la cotización: ' + errItems.message)
+      alert('Error al eliminar los productos de la cotizaciÃ³n: ' + errItems.message)
       return
     }
 
@@ -149,7 +149,7 @@ export default function CotizacionesTable({
     setBorrando(null)
 
     if (errCotizacion) {
-      alert('Error al eliminar la cotización: ' + errCotizacion.message)
+      alert('Error al eliminar la cotizaciÃ³n: ' + errCotizacion.message)
       return
     }
 
@@ -175,7 +175,7 @@ export default function CotizacionesTable({
 
     if (errItems || !items || items.length === 0) {
       setConvirtiendo(null)
-      alert('Error al obtener los productos de la cotización: ' + (errItems?.message || 'no tiene productos'))
+      alert('Error al obtener los productos de la cotizaciÃ³n: ' + (errItems?.message || 'no tiene productos'))
       return
     }
 
@@ -291,11 +291,11 @@ export default function CotizacionesTable({
             fontSize: '13px', fontWeight: 600, cursor: 'pointer', backgroundColor: '#1A6DD4', color: 'white',
           }}
         >
-          + Nueva cotización
+          + Nueva cotizaciÃ³n
         </button>
       </div>
 
-      <div style={{ backgroundColor: 'white', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+      <div style={{ backgroundColor: 'white', borderRadius: '10px', overflowX: 'auto', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: '#F4F7FC', borderBottom: '1px solid #E0E8F5' }}>
@@ -316,8 +316,8 @@ export default function CotizacionesTable({
                   onClick={() => setEditandoId(c.id)}
                   style={{ borderBottom: '1px solid #F0F4FB', cursor: 'pointer' }}
                 >
-                  <td style={tdStyle}>{c.clientes?.nombre || '—'}</td>
-                  <td style={tdStyle}>{c.sucursales?.nombre || '—'}</td>
+                  <td style={tdStyle}>{c.clientes?.nombre || 'â€”'}</td>
+                  <td style={tdStyle}>{c.sucursales?.nombre || 'â€”'}</td>
                   <td style={tdStyle}>
                     <span style={{
                       fontSize: '11px', padding: '3px 10px', borderRadius: '999px',
@@ -403,11 +403,11 @@ export default function CotizacionesTable({
               Convertir en venta
             </h2>
             <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
-              {cotizacionAConvertir.clientes?.nombre || 'Cliente'} — ${cotizacionAConvertir.total?.toFixed(2)}
+              {cotizacionAConvertir.clientes?.nombre || 'Cliente'} â€” ${cotizacionAConvertir.total?.toFixed(2)}
             </p>
 
             <label style={{ fontSize: '12px', color: '#0D1B3E', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-              Método de pago
+              MÃ©todo de pago
             </label>
             <select
               value={metodoPagoConversion}
@@ -442,3 +442,4 @@ export default function CotizacionesTable({
 
 const thStyle: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: '12px', color: '#888', fontWeight: 600 }
 const tdStyle: React.CSSProperties = { padding: '12px 16px', fontSize: '13px', color: '#333' }
+

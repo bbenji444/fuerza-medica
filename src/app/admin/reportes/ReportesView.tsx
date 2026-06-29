@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import Link from 'next/link'
@@ -43,7 +43,7 @@ const periodos = [
 const paletaSucursales = ['#1A6DD4', '#1A7A3E', '#B8860B', '#7A3EB8', '#B8463E']
 
 function formatoFecha(fecha: string) {
-  if (!fecha) return '—'
+  if (!fecha) return 'â€”'
   return new Date(`${fecha}T00:00:00`).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
@@ -55,6 +55,8 @@ export default function ReportesView({
   periodo,
   desde,
   hasta,
+  sucursalId,
+  sucursales,
   totalPeriodo,
   numeroVentas,
   productosVendidos,
@@ -64,6 +66,8 @@ export default function ReportesView({
   periodo: string
   desde: string
   hasta: string
+  sucursalId: string
+  sucursales: { id: string; nombre: string }[]
   totalPeriodo: number
   numeroVentas: number
   productosVendidos: ProductoVendido[]
@@ -77,6 +81,7 @@ export default function ReportesView({
   const router = useRouter()
 
   const cantidadProductosVendidos = productosVendidos.reduce((sum, p) => sum + p.cantidad, 0)
+  const sucursalSeleccionada = sucursales.find((s) => s.id === sucursalId)?.nombre || ''
 
   const colorPorSucursal = new Map<string, string>()
   function colorDe(nombreSucursal: string) {
@@ -86,14 +91,23 @@ export default function ReportesView({
     return colorPorSucursal.get(nombreSucursal)!
   }
 
+  function queryBase() {
+    return periodo ? `periodo=${periodo}` : `desde=${desde}&hasta=${hasta}`
+  }
+
+  function conSucursal(id: string) {
+    return id ? `&sucursal=${id}` : ''
+  }
+
   async function descargarPdf() {
     setGenerando(true)
-    await generarPdfReporteVentas(periodo || `${desde} a ${hasta}`, totalPeriodo, numeroVentas, productosVendidos)
+    const titulo = `${periodo || `${desde} a ${hasta}`}${sucursalSeleccionada ? ` â€” ${sucursalSeleccionada}` : ''}`
+    await generarPdfReporteVentas(titulo, totalPeriodo, numeroVentas, productosVendidos)
     setGenerando(false)
   }
 
   function aplicarRango() {
-    router.push(`/admin/reportes?desde=${desdeInput}&hasta=${hastaInput}`)
+    router.push(`/admin/reportes?desde=${desdeInput}&hasta=${hastaInput}${conSucursal(sucursalId)}`)
   }
 
   return (
@@ -102,7 +116,7 @@ export default function ReportesView({
         {periodos.map((p) => (
           <Link
             key={p.value}
-            href={`/admin/reportes?periodo=${p.value}`}
+            href={`/admin/reportes?periodo=${p.value}${conSucursal(sucursalId)}`}
             style={{
               padding: '10px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
               textDecoration: 'none',
@@ -125,6 +139,37 @@ export default function ReportesView({
         >
           {generando ? 'Generando...' : 'Descargar PDF'}
         </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: '13px', color: '#888', fontWeight: 600 }}>Sucursal:</span>
+        <Link
+          href={`/admin/reportes?${queryBase()}`}
+          style={{
+            padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+            textDecoration: 'none',
+            backgroundColor: !sucursalId ? '#0D1B3E' : 'white',
+            color: !sucursalId ? 'white' : '#0D1B3E',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          }}
+        >
+          Todas
+        </Link>
+        {sucursales.map((s) => (
+          <Link
+            key={s.id}
+            href={`/admin/reportes?${queryBase()}&sucursal=${s.id}`}
+            style={{
+              padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+              textDecoration: 'none',
+              backgroundColor: sucursalId === s.id ? '#0D1B3E' : 'white',
+              color: sucursalId === s.id ? 'white' : '#0D1B3E',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            }}
+          >
+            {s.nombre}
+          </Link>
+        ))}
       </div>
 
       <div style={{
@@ -162,7 +207,7 @@ export default function ReportesView({
           <p style={{ color: '#0D1B3E', fontSize: '24px', fontWeight: 700 }}>${totalPeriodo.toFixed(2)}</p>
         </div>
         <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-          <p style={{ color: '#888', fontSize: '13px', marginBottom: '8px' }}>Número de ventas</p>
+          <p style={{ color: '#888', fontSize: '13px', marginBottom: '8px' }}>NÃºmero de ventas</p>
           <p style={{ color: '#0D1B3E', fontSize: '24px', fontWeight: 700 }}>{numeroVentas}</p>
         </div>
         <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
@@ -172,7 +217,7 @@ export default function ReportesView({
       </div>
 
       {comparativoSucursales.length > 1 && (
-        <div style={{ backgroundColor: 'white', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '24px' }}>
+        <div style={{ backgroundColor: 'white', borderRadius: '10px', overflowX: 'auto', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '24px' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #E0E8F5' }}>
             <p style={{ color: '#0D1B3E', fontSize: '14px', fontWeight: 600 }}>Por sucursal</p>
           </div>
@@ -194,7 +239,7 @@ export default function ReportesView({
             boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
           }}
         >
-          Por venta (qué se vendió junto)
+          Por venta (quÃ© se vendiÃ³ junto)
         </button>
         <button
           onClick={() => setVista('productos')}
@@ -262,12 +307,12 @@ export default function ReportesView({
           })}
         </div>
       ) : (
-        <div style={{ backgroundColor: 'white', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <div style={{ backgroundColor: 'white', borderRadius: '10px', overflowX: 'auto', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ backgroundColor: '#F4F7FC', borderBottom: '1px solid #E0E8F5' }}>
                 <th style={thStyle}>Fecha</th>
-                <th style={thStyle}>Código</th>
+                <th style={thStyle}>CÃ³digo</th>
                 <th style={thStyle}>Producto</th>
                 <th style={thStyle}>Cantidad</th>
                 <th style={thStyle}>Total</th>
@@ -277,7 +322,7 @@ export default function ReportesView({
               {productosVendidos.map((p, idx) => (
                 <tr key={idx} style={{ borderBottom: '1px solid #F0F4FB' }}>
                   <td style={tdStyle}>{formatoFecha(p.fecha)}</td>
-                  <td style={tdStyle}>{p.codigo || '—'}</td>
+                  <td style={tdStyle}>{p.codigo || 'â€”'}</td>
                   <td style={tdStyle}>{p.nombre}</td>
                   <td style={tdStyle}>{p.cantidad}</td>
                   <td style={tdStyle}>${p.total.toFixed(2)}</td>
@@ -301,3 +346,4 @@ export default function ReportesView({
 const thStyle: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: '12px', color: '#888', fontWeight: 600 }
 const tdStyle: React.CSSProperties = { padding: '12px 16px', fontSize: '13px', color: '#333' }
 const dateInputStyle: React.CSSProperties = { padding: '8px 12px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px' }
+

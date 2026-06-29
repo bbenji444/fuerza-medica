@@ -85,16 +85,31 @@ export default function VentasTable({
   const [mostrarHistorial, setMostrarHistorial] = useState(false)
   const [mostrarCalculadora, setMostrarCalculadora] = useState(false)
   const [busqueda, setBusqueda] = useState('')
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
   const [generando, setGenerando] = useState<string | null>(null)
   const [borrando, setBorrando] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
-  const filtradas = ventas.filter(
-    (v) =>
+  const filtradas = ventas.filter((v) => {
+    const textoOk =
       v.folio.toLowerCase().includes(busqueda.toLowerCase()) ||
-      v.clientes?.nombre.toLowerCase().includes(busqueda.toLowerCase())
-  )
+      (v.clientes?.nombre || '').toLowerCase().includes(busqueda.toLowerCase())
+    if (!textoOk) return false
+    const fecha = new Date(v.creado_en)
+    if (fechaDesde) {
+      const desde = new Date(fechaDesde)
+      desde.setHours(0, 0, 0, 0)
+      if (fecha < desde) return false
+    }
+    if (fechaHasta) {
+      const hasta = new Date(fechaHasta)
+      hasta.setHours(23, 59, 59, 999)
+      if (fecha > hasta) return false
+    }
+    return true
+  })
 
   async function generarTicket(venta: Venta) {
     setGenerando(venta.id)
@@ -164,10 +179,11 @@ export default function VentasTable({
         promociones={promociones}
         configuracion={configuracion}
         usuario={usuario}
+        esAdmin={esAdmin}
         onVentaRegistrada={() => router.refresh()}
       />
 
-      <div style={{ marginTop: '24px', marginBottom: '16px', display: 'flex', gap: '10px' }}>
+      <div style={{ marginTop: '24px', marginBottom: '16px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
         <button
           onClick={() => setMostrarHistorial(!mostrarHistorial)}
           style={{
@@ -180,20 +196,22 @@ export default function VentasTable({
           {mostrarHistorial ? '▾' : '▸'} Historial ({ventas.length})
         </button>
 
-        <button
-          onClick={() => setMostrarCalculadora(!mostrarCalculadora)}
-          style={{
-            padding: '10px 18px', borderRadius: '8px', border: 'none',
-            fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-            backgroundColor: mostrarCalculadora ? '#0D1B3E' : 'white', color: mostrarCalculadora ? 'white' : '#0D1B3E',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-          }}
-        >
-          {mostrarCalculadora ? '▾' : '▸'} Calculadora de precio
-        </button>
+        {esAdmin && (
+          <button
+            onClick={() => setMostrarCalculadora(!mostrarCalculadora)}
+            style={{
+              padding: '10px 18px', borderRadius: '8px', border: 'none',
+              fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              backgroundColor: mostrarCalculadora ? '#0D1B3E' : 'white', color: mostrarCalculadora ? 'white' : '#0D1B3E',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            }}
+          >
+            {mostrarCalculadora ? '▾' : '▸'} Calculadora de precio
+          </button>
+        )}
       </div>
 
-      {mostrarCalculadora && (
+      {esAdmin && mostrarCalculadora && (
         <div style={{ marginBottom: '20px' }}>
           <CalculadoraPrecio configuracion={configuracion} productos={productos} esAdmin={esAdmin} />
         </div>
@@ -201,20 +219,48 @@ export default function VentasTable({
 
       {mostrarHistorial && (
         <div>
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
             <input
               type="text"
               placeholder="Buscar por folio o cliente..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               style={{
-                flex: '1', minWidth: '220px', maxWidth: '380px', padding: '10px 14px',
+                flex: '1', minWidth: '180px', maxWidth: '300px', padding: '10px 14px',
                 border: '1px solid #E0E8F5', borderRadius: '8px', fontSize: '14px', backgroundColor: 'white'
               }}
             />
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <label style={{ fontSize: '13px', color: '#888', whiteSpace: 'nowrap' }}>Del</label>
+              <input
+                type="date"
+                value={fechaDesde}
+                onChange={(e) => setFechaDesde(e.target.value)}
+                style={{ padding: '9px 12px', border: '1px solid #E0E8F5', borderRadius: '8px', fontSize: '13px', backgroundColor: 'white' }}
+              />
+              <label style={{ fontSize: '13px', color: '#888', whiteSpace: 'nowrap' }}>al</label>
+              <input
+                type="date"
+                value={fechaHasta}
+                onChange={(e) => setFechaHasta(e.target.value)}
+                style={{ padding: '9px 12px', border: '1px solid #E0E8F5', borderRadius: '8px', fontSize: '13px', backgroundColor: 'white' }}
+              />
+              {(fechaDesde || fechaHasta) && (
+                <button
+                  onClick={() => { setFechaDesde(''); setFechaHasta('') }}
+                  style={{ fontSize: '12px', color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Limpiar ✕
+                </button>
+              )}
+            </div>
+            <span style={{ fontSize: '13px', color: '#888' }}>
+              {filtradas.length} resultado{filtradas.length !== 1 ? 's' : ''}
+            </span>
           </div>
 
-          <div style={{ backgroundColor: 'white', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <div className="admin-table-scroll" style={{ borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '10px', overflow: 'hidden', minWidth: '600px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ backgroundColor: '#F4F7FC', borderBottom: '1px solid #E0E8F5' }}>
@@ -247,13 +293,15 @@ export default function VentasTable({
                         >
                           {generando === v.id ? 'Generando...' : 'Generar ticket'}
                         </button>
-                        <button
-                          onClick={() => borrarVenta(v)}
-                          disabled={borrando === v.id}
-                          style={{ fontSize: '12px', color: '#B81C1C', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                        >
-                          {borrando === v.id ? 'Borrando...' : 'Borrar'}
-                        </button>
+                        {esAdmin && (
+                          <button
+                            onClick={() => borrarVenta(v)}
+                            disabled={borrando === v.id}
+                            style={{ fontSize: '12px', color: '#B81C1C', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                          >
+                            {borrando === v.id ? 'Borrando...' : 'Borrar'}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -261,12 +309,13 @@ export default function VentasTable({
                 {filtradas.length === 0 && (
                   <tr>
                     <td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: '#888', padding: '24px' }}>
-                      No hay ventas que coincidan
+                      No hay ventas que coincidan con los filtros
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+          </div>
           </div>
         </div>
       )}

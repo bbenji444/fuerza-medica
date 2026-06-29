@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import Image from 'next/image'
-import SolicitarProductoModal from './SolicitarProductoModal'
+import Link from 'next/link'
+import CategoriasMegaMenu from './CategoriasMegaMenu'
+import { useCart } from '../components/CartContext'
+import ProductoImagen from '../components/ProductoImagen'
 
 type Producto = {
   id: string
@@ -12,6 +14,9 @@ type Producto = {
   precio_venta: number
   categoria_id: string | null
   imagen_url: string | null
+  imagen_url_hover?: string | null
+  variante_grupo_id?: string | null
+  variante_orden?: number
 }
 
 type Categoria = {
@@ -20,41 +25,30 @@ type Categoria = {
   categoria_padre: string | null
 }
 
-type Sucursal = {
-  id: string
-  nombre: string
-  direccion: string | null
-  telefono: string | null
-}
-
 const TAMANO_PAGINA = 24
 
 export default function CatalogoClient({
   productos,
   categorias,
-  sucursales,
 }: {
   productos: Producto[]
   categorias: Categoria[]
-  sucursales: Sucursal[]
 }) {
   const searchParams = useSearchParams()
+  const { agregar } = useCart()
 
-  const [busqueda, setBusqueda] = useState('')
+  const [busqueda, setBusqueda] = useState(searchParams.get('buscar') || '')
   const [categoriaFiltro, setCategoriaFiltro] = useState(searchParams.get('categoria') || '')
-  const [subcategoriaFiltro, setSubcategoriaFiltro] = useState('')
+  const [subcategoriaFiltro, setSubcategoriaFiltro] = useState(searchParams.get('subcategoria') || '')
   const [cantidadVisible, setCantidadVisible] = useState(TAMANO_PAGINA)
-  const [productoSolicitar, setProductoSolicitar] = useState<Producto | null>(null)
   const sentinelaRef = useRef<HTMLDivElement>(null)
 
-  const categoriasPrincipales = categorias.filter((c) => !c.categoria_padre)
-  const subcategoriasDisponibles = categorias.filter((c) => c.categoria_padre === categoriaFiltro)
   const idsParaFiltrar = categoriaFiltro
     ? [categoriaFiltro, ...categorias.filter((c) => c.categoria_padre === categoriaFiltro).map((c) => c.id)]
     : []
 
   const filtrados = useMemo(() => {
-    return productos
+    const coincidentes = productos
       .filter(
         (p) =>
           p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
@@ -65,6 +59,21 @@ export default function CatalogoClient({
         if (categoriaFiltro) return idsParaFiltrar.includes(p.categoria_id || '')
         return true
       })
+
+    // Las variantes de tamaño/color del mismo producto (mismo variante_grupo_id)
+    // se muestran como una sola tarjeta — la de menor variante_orden entre las que coincidieron.
+    const representantePorGrupo = new Map<string, Producto>()
+    for (const p of coincidentes) {
+      if (!p.variante_grupo_id) continue
+      const actual = representantePorGrupo.get(p.variante_grupo_id)
+      if (!actual || (p.variante_orden ?? 0) < (actual.variante_orden ?? 0)) {
+        representantePorGrupo.set(p.variante_grupo_id, p)
+      }
+    }
+
+    return coincidentes.filter(
+      (p) => !p.variante_grupo_id || representantePorGrupo.get(p.variante_grupo_id)?.id === p.id
+    )
   }, [productos, busqueda, categoriaFiltro, subcategoriaFiltro, idsParaFiltrar])
 
   const visibles = filtrados.slice(0, cantidadVisible)
@@ -88,8 +97,13 @@ export default function CatalogoClient({
     return () => observer.disconnect()
   }, [filtrados.length])
 
-  function cambiarCategoria(id: string) {
-    setCategoriaFiltro(id)
+  function seleccionarCategoria(categoriaId: string, subcategoriaId: string) {
+    setCategoriaFiltro(categoriaId)
+    setSubcategoriaFiltro(subcategoriaId)
+  }
+
+  function limpiarCategoria() {
+    setCategoriaFiltro('')
     setSubcategoriaFiltro('')
   }
 
@@ -109,29 +123,13 @@ export default function CatalogoClient({
           className="min-w-[220px] flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm focus:border-azul focus:outline-none sm:max-w-sm"
         />
 
-        <select
-          value={categoriaFiltro}
-          onChange={(e) => cambiarCategoria(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm focus:border-azul focus:outline-none"
-        >
-          <option value="">Todas las categorías</option>
-          {categoriasPrincipales.map((c) => (
-            <option key={c.id} value={c.id}>{c.nombre}</option>
-          ))}
-        </select>
-
-        {categoriaFiltro && subcategoriasDisponibles.length > 0 && (
-          <select
-            value={subcategoriaFiltro}
-            onChange={(e) => setSubcategoriaFiltro(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm focus:border-azul focus:outline-none"
-          >
-            <option value="">Todas las subcategorías</option>
-            {subcategoriasDisponibles.map((s) => (
-              <option key={s.id} value={s.id}>{s.nombre}</option>
-            ))}
-          </select>
-        )}
+        <CategoriasMegaMenu
+          categorias={categorias}
+          categoriaFiltro={categoriaFiltro}
+          subcategoriaFiltro={subcategoriaFiltro}
+          onSeleccionar={seleccionarCategoria}
+          onLimpiar={limpiarCategoria}
+        />
       </div>
 
       {filtrados.length === 0 ? (
@@ -139,24 +137,30 @@ export default function CatalogoClient({
           No encontramos productos que coincidan con tu búsqueda.
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-5 md:grid-cols-4">
           {visibles.map((p) => (
             <div key={p.id} className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm transition hover:shadow-lg">
-              <div className="flex h-36 items-center justify-center bg-fondo-claro">
-                {p.imagen_url ? (
-                  <Image src={p.imagen_url} alt={p.nombre} width={160} height={144} className="h-36 w-full object-contain p-3" />
-                ) : (
-                  <span className="text-4xl opacity-30">⚕️</span>
-                )}
-              </div>
-              <div className="flex flex-1 flex-col p-4">
-                <p className="line-clamp-2 flex-1 text-sm font-semibold text-navy">{p.nombre}</p>
-                <p className="mt-2 text-lg font-extrabold text-azul">${p.precio_venta?.toFixed(2)}</p>
+              <Link href={`/producto/${p.id}`} className="flex h-28 items-center justify-center bg-fondo-claro sm:h-36">
+                <ProductoImagen
+                  imagenUrl={p.imagen_url}
+                  imagenUrlHover={p.imagen_url_hover}
+                  nombre={p.nombre}
+                  width={160}
+                  height={144}
+                  className="h-28 w-full object-contain p-2 sm:h-36 sm:p-3"
+                  classNamePlaceholder="h-20 w-20 rounded-full object-cover opacity-70 sm:h-24 sm:w-24"
+                />
+              </Link>
+              <div className="flex flex-1 flex-col p-3 sm:p-4">
+                <Link href={`/producto/${p.id}`} className="line-clamp-2 flex-1 text-xs font-semibold text-navy hover:text-azul sm:text-sm">
+                  {p.nombre}
+                </Link>
+                <p className="mt-1.5 text-base font-extrabold text-azul sm:mt-2 sm:text-lg">${p.precio_venta?.toFixed(2)}</p>
                 <button
-                  onClick={() => setProductoSolicitar(p)}
-                  className="mt-3 rounded-full bg-navy px-4 py-2 text-xs font-bold text-white transition hover:bg-navy/85"
+                  onClick={() => agregar(p)}
+                  className="mt-2 rounded-full bg-[#25D366] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#1fb959] sm:mt-3 sm:px-4 sm:py-2"
                 >
-                  Solicitar
+                  + Carrito
                 </button>
               </div>
             </div>
@@ -168,14 +172,6 @@ export default function CatalogoClient({
         <div ref={sentinelaRef} className="flex justify-center py-10">
           <span className="text-sm text-gray-400">Cargando más productos...</span>
         </div>
-      )}
-
-      {productoSolicitar && (
-        <SolicitarProductoModal
-          producto={productoSolicitar}
-          sucursales={sucursales}
-          onCerrar={() => setProductoSolicitar(null)}
-        />
       )}
     </div>
   )

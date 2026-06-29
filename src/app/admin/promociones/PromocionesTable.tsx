@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
@@ -128,7 +128,7 @@ export default function PromocionesTable({
     }
     const valor = parseFloat(form.valor)
     if (isNaN(valor) || valor <= 0) {
-      setError('El valor debe ser un número mayor a 0')
+      setError('El valor debe ser un nÃºmero mayor a 0')
       return
     }
     if (form.alcance === 'producto' && !form.producto_id) {
@@ -136,7 +136,7 @@ export default function PromocionesTable({
       return
     }
     if (form.alcance === 'categoria' && !form.categoria_id) {
-      setError('Selecciona una categoría')
+      setError('Selecciona una categorÃ­a')
       return
     }
 
@@ -170,7 +170,7 @@ export default function PromocionesTable({
   }
 
   async function borrar(p: Promocion) {
-    if (!confirm(`¿Eliminar la promoción "${p.nombre}"?`)) return
+    if (!confirm(`Â¿Eliminar la promociÃ³n "${p.nombre}"?`)) return
 
     setBorrando(p.id)
     const { error: errBorrar } = await supabase.from('promociones').delete().eq('id', p.id)
@@ -189,7 +189,7 @@ export default function PromocionesTable({
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           type="text"
-          placeholder="Buscar promoción..."
+          placeholder="Buscar promociÃ³n..."
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           style={{
@@ -205,11 +205,11 @@ export default function PromocionesTable({
             fontSize: '13px', fontWeight: 600, cursor: 'pointer', backgroundColor: '#1A6DD4', color: 'white',
           }}
         >
-          + Nueva promoción
+          + Nueva promociÃ³n
         </button>
       </div>
 
-      <div style={{ backgroundColor: 'white', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+      <div style={{ backgroundColor: 'white', borderRadius: '10px', overflowX: 'auto', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: '#F4F7FC', borderBottom: '1px solid #E0E8F5' }}>
@@ -233,10 +233,10 @@ export default function PromocionesTable({
                   <td style={tdStyle}>{p.nombre}</td>
                   <td style={tdStyle}>{tipoLabel}</td>
                   <td style={tdStyle}>{valorMostrado}</td>
-                  <td style={tdStyle}>{p.productos?.nombre || p.categorias?.nombre || '—'}</td>
+                  <td style={tdStyle}>{p.productos?.nombre || p.categorias?.nombre || 'â€”'}</td>
                   <td style={tdStyle}>
                     {p.fecha_inicio || p.fecha_fin
-                      ? `${p.fecha_inicio || '—'} a ${p.fecha_fin || '—'}`
+                      ? `${p.fecha_inicio || 'â€”'} a ${p.fecha_fin || 'â€”'}`
                       : 'Sin vigencia'}
                   </td>
                   <td style={tdStyle}>
@@ -289,7 +289,7 @@ export default function PromocionesTable({
             width: '420px', maxHeight: '88vh', overflowY: 'auto',
           }}>
             <h2 style={{ color: '#0D1B3E', fontSize: '18px', marginBottom: '20px' }}>
-              {editandoId ? 'Editar promoción' : 'Nueva promoción'}
+              {editandoId ? 'Editar promociÃ³n' : 'Nueva promociÃ³n'}
             </h2>
 
             {error && (
@@ -332,7 +332,7 @@ export default function PromocionesTable({
                   checked={form.alcance === 'producto'}
                   onChange={() => setForm({ ...form, alcance: 'producto' })}
                 />
-                Producto específico
+                Producto especÃ­fico
               </label>
               <label style={{ fontSize: '13px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <input
@@ -340,7 +340,7 @@ export default function PromocionesTable({
                   checked={form.alcance === 'categoria'}
                   onChange={() => setForm({ ...form, alcance: 'categoria' })}
                 />
-                Categoría completa
+                CategorÃ­a completa
               </label>
             </div>
 
@@ -370,9 +370,9 @@ export default function PromocionesTable({
                 onChange={(e) => setForm({ ...form, categoria_id: e.target.value })}
                 style={inputStyle}
               >
-                <option value="">Elegir categoría...</option>
+                <option value="">Elegir categorÃ­a...</option>
                 {categorias.map((c) => (
-                  <option key={c.id} value={c.id}>{c.categoria_padre ? '— ' : ''}{c.nombre}</option>
+                  <option key={c.id} value={c.id}>{c.categoria_padre ? 'â€” ' : ''}{c.nombre}</option>
                 ))}
               </select>
             )}
@@ -404,7 +404,7 @@ export default function PromocionesTable({
                 checked={form.activa}
                 onChange={(e) => setForm({ ...form, activa: e.target.checked })}
               />
-              Promoción activa
+              PromociÃ³n activa
             </label>
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
@@ -426,3 +426,4 @@ const labelStyle: React.CSSProperties = { fontSize: '12px', color: '#0D1B3E', fo
 const inputStyle: React.CSSProperties = { width: '100%', padding: '9px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '14px', marginBottom: '4px' }
 const btnSecundario: React.CSSProperties = { flex: 1, padding: '12px', backgroundColor: '#F0F4FB', color: '#888', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: 'pointer' }
 const btnPrimario: React.CSSProperties = { flex: 1, padding: '12px', backgroundColor: '#1A6DD4', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }
+

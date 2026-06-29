@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -91,7 +91,7 @@ export default function EmpleadosTable({
         return
       }
       if (!form.password || form.password.length < 6) {
-        setError('La contraseña debe tener al menos 6 caracteres')
+        setError('La contraseÃ±a debe tener al menos 6 caracteres')
         return
       }
     }
@@ -120,7 +120,7 @@ export default function EmpleadosTable({
 
   async function cambiarEstado(e: Empleado) {
     const accion = e.activo ? 'desactivar' : 'activar'
-    if (!confirm(`¿${e.activo ? 'Desactivar' : 'Activar'} el acceso de ${e.nombre}?`)) return
+    if (!confirm(`Â¿${e.activo ? 'Desactivar' : 'Activar'} el acceso de ${e.nombre}?`)) return
 
     setCambiandoEstadoId(e.id)
     const res = await fetch(`/api/empleados/${e.id}`, {
@@ -142,7 +142,7 @@ export default function EmpleadosTable({
   async function resetearPassword() {
     if (!reseteandoId) return
     if (!nuevaPassword || nuevaPassword.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres')
+      setError('La contraseÃ±a debe tener al menos 6 caracteres')
       return
     }
 
@@ -159,7 +159,7 @@ export default function EmpleadosTable({
     setGuardando(false)
 
     if (!res.ok) {
-      setError(data.error || 'Error al resetear contraseña')
+      setError(data.error || 'Error al resetear contraseÃ±a')
       return
     }
 
@@ -192,7 +192,7 @@ export default function EmpleadosTable({
         </button>
       </div>
 
-      <div style={{ backgroundColor: 'white', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+      <div style={{ backgroundColor: 'white', borderRadius: '10px', overflowX: 'auto', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: '#F4F7FC', borderBottom: '1px solid #E0E8F5' }}>
@@ -209,7 +209,7 @@ export default function EmpleadosTable({
               <tr key={e.id} style={{ borderBottom: '1px solid #F0F4FB' }}>
                 <td style={tdStyle}>{e.nombre}</td>
                 <td style={tdStyle}>{e.email}</td>
-                <td style={tdStyle}>{e.sucursales?.nombre || '—'}</td>
+                <td style={tdStyle}>{e.sucursales?.nombre || 'â€”'}</td>
                 <td style={tdStyle}>{e.rol === 'admin_general' ? 'Admin general' : 'Operador'}</td>
                 <td style={tdStyle}>
                   <span style={{
@@ -224,7 +224,7 @@ export default function EmpleadosTable({
                   <div style={{ display: 'flex', gap: '12px' }}>
                     <button onClick={() => abrirEdicion(e)} style={linkBtn('#1A6DD4')}>Editar</button>
                     <button onClick={() => { setReseteandoId(e.id); setNuevaPassword(''); setError('') }} style={linkBtn('#1A6DD4')}>
-                      Resetear contraseña
+                      Resetear contraseÃ±a
                     </button>
                     <button
                       onClick={() => cambiarEstado(e)}
@@ -260,7 +260,7 @@ export default function EmpleadosTable({
             <label style={labelStyle}>Nombre</label>
             <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} style={inputStyle} />
 
-            <label style={labelStyle}>Correo (usuario para iniciar sesión)</label>
+            <label style={labelStyle}>Correo (usuario para iniciar sesiÃ³n)</label>
             <input
               type="email"
               value={form.email}
@@ -271,7 +271,7 @@ export default function EmpleadosTable({
 
             {!editandoId && (
               <>
-                <label style={labelStyle}>Contraseña</label>
+                <label style={labelStyle}>ContraseÃ±a</label>
                 <input
                   type="password"
                   value={form.password}
@@ -313,12 +313,12 @@ export default function EmpleadosTable({
         <div style={overlayStyle}>
           <div style={{ ...modalStyle, width: '360px' }}>
             <h2 style={{ color: '#0D1B3E', fontSize: '18px', marginBottom: '20px' }}>
-              Resetear contraseña
+              Resetear contraseÃ±a
             </h2>
 
             {error && <p style={errorStyle}>{error}</p>}
 
-            <label style={labelStyle}>Nueva contraseña</label>
+            <label style={labelStyle}>Nueva contraseÃ±a</label>
             <input
               type="password"
               value={nuevaPassword}
@@ -352,3 +352,4 @@ const btnPrimario: React.CSSProperties = { flex: 1, padding: '12px', backgroundC
 const overlayStyle: React.CSSProperties = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }
 const modalStyle: React.CSSProperties = { backgroundColor: 'white', borderRadius: '12px', padding: '28px', width: '380px', maxHeight: '88vh', overflowY: 'auto' }
 const errorStyle: React.CSSProperties = { color: '#B81C1C', fontSize: '13px', marginBottom: '12px', backgroundColor: '#FDE8E8', padding: '10px', borderRadius: '6px' }
+

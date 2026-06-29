@@ -2,21 +2,25 @@ import { Suspense } from 'react'
 import { createClient } from '@/utils/supabase/server'
 import SiteHeader from '../components/SiteHeader'
 import SiteFooter from '../components/SiteFooter'
+import WhatsAppFloatingButton from '../components/WhatsAppFloatingButton'
 import CatalogoClient from './CatalogoClient'
+import { ordenarSucursales } from '../components/sucursalesInfo'
 
 export default async function CatalogoPage() {
   const supabase = await createClient()
 
-  const [{ data: productos }, { data: categorias }, { data: sucursales }] = await Promise.all([
+  const [{ data: productos }, { data: categorias }, { data: sucursalesData }] = await Promise.all([
     supabase
       .from('productos')
-      .select('id, codigo, nombre, precio_venta, categoria_id, imagen_url')
+      .select('id, codigo, nombre, precio_venta, categoria_id, imagen_url, imagen_url_hover, variante_grupo_id, variante_orden')
       .eq('activo', true)
       .order('nombre')
       .range(0, 1999),
     supabase.from('categorias').select('id, nombre, categoria_padre').order('nombre'),
     supabase.from('sucursales').select('id, nombre, direccion, telefono').eq('activa', true).order('creado_en'),
   ])
+
+  const sucursales = ordenarSucursales(sucursalesData || [])
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -26,11 +30,11 @@ export default async function CatalogoPage() {
           <CatalogoClient
             productos={productos || []}
             categorias={categorias || []}
-            sucursales={sucursales || []}
           />
         </Suspense>
       </main>
-      <SiteFooter sucursales={sucursales || []} />
+      <SiteFooter sucursales={sucursales} />
+      <WhatsAppFloatingButton />
     </div>
   )
 }

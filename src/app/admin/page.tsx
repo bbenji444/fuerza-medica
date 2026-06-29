@@ -3,6 +3,7 @@ import { obtenerUsuarioActual } from '@/utils/supabase/usuarioActual'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import DashboardCharts from './DashboardCharts'
+import StockBajoCard from './StockBajoCard'
 import { fetchTodasLasFilas } from '@/utils/fetchTodasLasFilas'
 
 export default async function AdminPage() {
@@ -22,37 +23,49 @@ export default async function AdminPage() {
     { count: cotizacionesPendientes },
     inventarioCompleto,
     { data: itemsVendidos },
+    { data: sucursalesData },
   ] = await Promise.all([
     supabase.from('ventas').select('total').gte('creado_en', inicioHoy),
     supabase.from('ventas').select('total, sucursales(nombre)').gte('creado_en', inicioMes),
     supabase.from('cotizaciones').select('*', { count: 'exact', head: true }).in('estado', ['borrador', 'enviada']),
-    fetchTodasLasFilas<{ producto_id: string; existencia: number; inventario_maximo: number }>(
+    fetchTodasLasFilas<{ producto_id: string; existencia: number; inventario_maximo: number; sucursal_id: string }>(
       supabase,
       'inventario',
-      'producto_id, existencia, inventario_maximo'
+      'producto_id, existencia, inventario_maximo, sucursal_id'
     ),
     supabase
       .from('venta_items')
       .select('cantidad, producto_id, productos(nombre), ventas!inner(creado_en)')
       .gte('ventas.creado_en', inicioMes),
+    supabase.from('sucursales').select('id, nombre').eq('activa', true),
   ])
 
   const totalHoy = (ventasHoy || []).reduce((sum, v) => sum + (v.total || 0), 0)
   const totalMes = (ventasMes || []).reduce((sum, v) => sum + (v.total || 0), 0)
 
-  const productosStockBajo = new Set(
-    inventarioCompleto
-      .filter((i) => i.existencia <= i.inventario_maximo / 3)
-      .map((i) => i.producto_id)
-  )
-  const stockBajoCount = productosStockBajo.size
+  // Orden fijo: Coacalco → Tultepec → resto
+  const sucursalesOrdenadas = [
+    ...(sucursalesData || []).filter((s) => s.nombre.toLowerCase().includes('coacalco')),
+    ...(sucursalesData || []).filter((s) => s.nombre.toLowerCase().includes('tultepec')),
+    ...(sucursalesData || []).filter(
+      (s) => !s.nombre.toLowerCase().includes('coacalco') && !s.nombre.toLowerCase().includes('tultepec')
+    ),
+  ]
 
-  const porSucursal = new Map<string, number>()
+  const stockBajoPorSucursal = sucursalesOrdenadas.map((s) => ({
+    id: s.id,
+    nombre: s.nombre,
+    count: inventarioCompleto.filter(
+      (i) => i.sucursal_id === s.id && i.existencia <= i.inventario_maximo / 3
+    ).length,
+  }))
+
+  const ventasPorSucursal = new Map<string, number>()
   for (const v of ventasMes || []) {
     const nombre = (v as any).sucursales?.nombre || 'Sin sucursal'
-    porSucursal.set(nombre, (porSucursal.get(nombre) || 0) + (v.total || 0))
+    ventasPorSucursal.set(nombre, (ventasPorSucursal.get(nombre) || 0) + (v.total || 0))
   }
-  const comparativoSucursales = Array.from(porSucursal.entries()).map(([nombre, total]) => ({ nombre, total }))
+  const comparativoSucursales = Array.from(ventasPorSucursal.entries()).map(([nombre, total]) => ({ nombre, total }))
 
   const porProducto = new Map<string, { nombre: string; cantidad: number }>()
   for (const item of (itemsVendidos || []) as any[]) {
@@ -77,7 +90,7 @@ export default async function AdminPage() {
         {ahora.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+      <div className="admin-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
         <Link href="/admin/reportes?periodo=hoy" style={{ textDecoration: 'none' }}>
           <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
             <p style={{ color: '#888', fontSize: '13px', marginBottom: '8px' }}>Ventas de hoy</p>
@@ -99,12 +112,10 @@ export default async function AdminPage() {
           <p style={{ color: '#0D1B3E', fontSize: '24px', fontWeight: 700 }}>{cotizacionesPendientes || 0}</p>
         </div>
 
-        <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-          <p style={{ color: '#888', fontSize: '13px', marginBottom: '8px' }}>Productos con stock bajo</p>
-          <p style={{ color: stockBajoCount > 0 ? '#C0392B' : '#0D1B3E', fontSize: '24px', fontWeight: 700 }}>
-            {stockBajoCount}
-          </p>
-        </div>
+        <StockBajoCard
+          initialPorSucursal={stockBajoPorSucursal}
+          sucursales={sucursalesOrdenadas}
+        />
       </div>
 
       <DashboardCharts comparativoSucursales={comparativoSucursales} topProductos={topProductos} />
