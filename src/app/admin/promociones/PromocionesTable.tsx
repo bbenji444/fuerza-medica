@@ -128,7 +128,7 @@ export default function PromocionesTable({
     }
     const valor = parseFloat(form.valor)
     if (isNaN(valor) || valor <= 0) {
-      setError('El valor debe ser un nÃºmero mayor a 0')
+      setError('El valor debe ser un número mayor a 0')
       return
     }
     if (form.alcance === 'producto' && !form.producto_id) {
@@ -136,7 +136,7 @@ export default function PromocionesTable({
       return
     }
     if (form.alcance === 'categoria' && !form.categoria_id) {
-      setError('Selecciona una categorÃ­a')
+      setError('Selecciona una categoría')
       return
     }
 
@@ -170,7 +170,7 @@ export default function PromocionesTable({
   }
 
   async function borrar(p: Promocion) {
-    if (!confirm(`Â¿Eliminar la promociÃ³n "${p.nombre}"?`)) return
+    if (!confirm(`¿Eliminar la promoción "${p.nombre}"?`)) return
 
     setBorrando(p.id)
     const { error: errBorrar } = await supabase.from('promociones').delete().eq('id', p.id)
@@ -189,7 +189,7 @@ export default function PromocionesTable({
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           type="text"
-          placeholder="Buscar promociÃ³n..."
+          placeholder="Buscar promoción..."
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           style={{
@@ -205,7 +205,7 @@ export default function PromocionesTable({
             fontSize: '13px', fontWeight: 600, cursor: 'pointer', backgroundColor: '#1A6DD4', color: 'white',
           }}
         >
-          + Nueva promociÃ³n
+          + Nueva promoción
         </button>
       </div>
 
@@ -233,10 +233,10 @@ export default function PromocionesTable({
                   <td style={tdStyle}>{p.nombre}</td>
                   <td style={tdStyle}>{tipoLabel}</td>
                   <td style={tdStyle}>{valorMostrado}</td>
-                  <td style={tdStyle}>{p.productos?.nombre || p.categorias?.nombre || 'â€”'}</td>
+                  <td style={tdStyle}>{p.productos?.nombre || p.categorias?.nombre || '—'}</td>
                   <td style={tdStyle}>
                     {p.fecha_inicio || p.fecha_fin
-                      ? `${p.fecha_inicio || 'â€”'} a ${p.fecha_fin || 'â€”'}`
+                      ? `${p.fecha_inicio || '—'} a ${p.fecha_fin || '—'}`
                       : 'Sin vigencia'}
                   </td>
                   <td style={tdStyle}>
@@ -289,7 +289,7 @@ export default function PromocionesTable({
             width: '420px', maxHeight: '88vh', overflowY: 'auto',
           }}>
             <h2 style={{ color: '#0D1B3E', fontSize: '18px', marginBottom: '20px' }}>
-              {editandoId ? 'Editar promociÃ³n' : 'Nueva promociÃ³n'}
+              {editandoId ? 'Editar promoción' : 'Nueva promoción'}
             </h2>
 
             {error && (
@@ -332,7 +332,7 @@ export default function PromocionesTable({
                   checked={form.alcance === 'producto'}
                   onChange={() => setForm({ ...form, alcance: 'producto' })}
                 />
-                Producto especÃ­fico
+                Producto específico
               </label>
               <label style={{ fontSize: '13px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <input
@@ -340,7 +340,7 @@ export default function PromocionesTable({
                   checked={form.alcance === 'categoria'}
                   onChange={() => setForm({ ...form, alcance: 'categoria' })}
                 />
-                CategorÃ­a completa
+                Categoría completa
               </label>
             </div>
 
@@ -370,9 +370,9 @@ export default function PromocionesTable({
                 onChange={(e) => setForm({ ...form, categoria_id: e.target.value })}
                 style={inputStyle}
               >
-                <option value="">Elegir categorÃ­a...</option>
+                <option value="">Elegir categoría...</option>
                 {categorias.map((c) => (
-                  <option key={c.id} value={c.id}>{c.categoria_padre ? 'â€” ' : ''}{c.nombre}</option>
+                  <option key={c.id} value={c.id}>{c.categoria_padre ? '— ' : ''}{c.nombre}</option>
                 ))}
               </select>
             )}
@@ -404,7 +404,7 @@ export default function PromocionesTable({
                 checked={form.activa}
                 onChange={(e) => setForm({ ...form, activa: e.target.checked })}
               />
-              PromociÃ³n activa
+              Promoción activa
             </label>
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>

@@ -155,7 +155,7 @@ export default function DestacadosTable({
             {ordenados.map((d, idx) => (
               <tr key={d.id} style={{ borderBottom: '1px solid #F0F4FB' }}>
                 <td style={tdStyle}>{idx + 1}</td>
-                <td style={tdStyle}>{d.productos?.nombre || 'â€”'}</td>
+                <td style={tdStyle}>{d.productos?.nombre || '—'}</td>
                 <td style={tdStyle}>${d.productos?.precio_venta?.toFixed(2)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', gap: '10px' }}>
@@ -164,14 +164,14 @@ export default function DestacadosTable({
                       disabled={idx === 0 || guardando === d.id}
                       style={{ fontSize: '12px', color: '#1A6DD4', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                     >
-                      â†‘
+                      ↑
                     </button>
                     <button
                       onClick={() => moverPosicion(d, 1)}
                       disabled={idx === ordenados.length - 1 || guardando === d.id}
                       style={{ fontSize: '12px', color: '#1A6DD4', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                     >
-                      â†“
+                      ↓
                     </button>
                     <button
                       onClick={() => quitar(d.id)}
@@ -187,7 +187,7 @@ export default function DestacadosTable({
             {ordenados.length === 0 && (
               <tr>
                 <td colSpan={4} style={{ ...tdStyle, textAlign: 'center', color: '#888', padding: '24px' }}>
-                  Sin productos destacados. BÃºscalos arriba para agregarlos.
+                  Sin productos destacados. Búscalos arriba para agregarlos.
                 </td>
               </tr>
             )}
