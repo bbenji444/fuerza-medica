@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import VentaRapidaPanel from './VentaRapidaPanel'
 import CalculadoraPrecio from './CalculadoraPrecio'
+import CortesCajaTable from './CortesCajaTable'
 import { generarPdfTicket } from '@/utils/generarPdfTicket'
 import { Promocion } from '@/utils/promociones'
 import { restituirInventarioCarrito } from '@/utils/descontarInventarioCarrito'
@@ -59,6 +60,26 @@ type Venta = {
   sucursal_id: string
   clientes: { nombre: string } | null
   sucursales: { nombre: string } | null
+  monto_efectivo?: number | null
+  monto_tarjeta?: number | null
+  monto_transferencia?: number | null
+  monto_recibido_efectivo?: number | null
+  cambio?: number | null
+}
+
+type CorteCaja = {
+  id: string
+  sucursal_id: string
+  fondo_inicial: number
+  abierto_en: string
+  estado: string
+  efectivo_esperado: number | null
+  efectivo_contado: number | null
+  diferencia: number | null
+  cerrado_en: string | null
+  sucursales: { nombre: string } | null
+  usuario_apertura: { nombre: string } | null
+  usuario_cierre: { nombre: string } | null
 }
 
 export default function VentasTable({
@@ -69,6 +90,7 @@ export default function VentasTable({
   inventario,
   promociones,
   configuracion,
+  cortesCaja,
   esAdmin,
   usuario,
 }: {
@@ -79,11 +101,13 @@ export default function VentasTable({
   inventario: InventarioItem[]
   promociones: Promocion[]
   configuracion: Configuracion
+  cortesCaja: CorteCaja[]
   esAdmin: boolean
   usuario: Usuario
 }) {
   const [mostrarHistorial, setMostrarHistorial] = useState(false)
   const [mostrarCalculadora, setMostrarCalculadora] = useState(false)
+  const [mostrarCortes, setMostrarCortes] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
@@ -196,6 +220,18 @@ export default function VentasTable({
           {mostrarHistorial ? '▾' : '▸'} Historial ({ventas.length})
         </button>
 
+        <button
+          onClick={() => setMostrarCortes(!mostrarCortes)}
+          style={{
+            padding: '10px 18px', borderRadius: '8px', border: 'none',
+            fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+            backgroundColor: mostrarCortes ? '#0D1B3E' : 'white', color: mostrarCortes ? 'white' : '#0D1B3E',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          }}
+        >
+          {mostrarCortes ? '▾' : '▸'} Cortes de caja ({cortesCaja.length})
+        </button>
+
         {esAdmin && (
           <button
             onClick={() => setMostrarCalculadora(!mostrarCalculadora)}
@@ -214,6 +250,12 @@ export default function VentasTable({
       {esAdmin && mostrarCalculadora && (
         <div style={{ marginBottom: '20px' }}>
           <CalculadoraPrecio configuracion={configuracion} productos={productos} esAdmin={esAdmin} />
+        </div>
+      )}
+
+      {mostrarCortes && (
+        <div style={{ marginBottom: '20px' }}>
+          <CortesCajaTable cortes={cortesCaja} />
         </div>
       )}
 
@@ -281,7 +323,23 @@ export default function VentasTable({
                     <td style={tdStyle}>{v.sucursales?.nombre || '—'}</td>
                     <td style={tdStyle}>${v.total?.toFixed(2)}</td>
                     <td style={tdStyle}>
-                      <span style={{ textTransform: 'capitalize' }}>{v.metodo_pago}</span>
+                      <span
+                        style={{ textTransform: 'capitalize' }}
+                        title={
+                          v.metodo_pago === 'mixto'
+                            ? [
+                                v.monto_efectivo ? `Efectivo $${v.monto_efectivo.toFixed(2)}` : '',
+                                v.monto_tarjeta ? `Tarjeta $${v.monto_tarjeta.toFixed(2)}` : '',
+                                v.monto_transferencia ? `Transferencia $${v.monto_transferencia.toFixed(2)}` : '',
+                              ].filter(Boolean).join(' + ')
+                            : undefined
+                        }
+                      >
+                        {v.metodo_pago}
+                      </span>
+                      {(v.cambio || 0) > 0 && (
+                        <div style={{ fontSize: '11px', color: '#888' }}>Cambio: ${v.cambio!.toFixed(2)}</div>
+                      )}
                     </td>
                     <td style={tdStyle}>{new Date(v.creado_en).toLocaleDateString('es-MX')}</td>
                     <td style={tdStyle}>

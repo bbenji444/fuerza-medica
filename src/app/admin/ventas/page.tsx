@@ -18,10 +18,11 @@ export default async function VentasPage() {
     inventario,
     { data: promociones },
     { data: configuracion },
+    { data: cortesCaja },
   ] = await Promise.all([
     supabase
       .from('ventas')
-      .select('id, folio, total, metodo_pago, creado_en, sucursal_id, clientes(nombre), sucursales(nombre)')
+      .select('id, folio, total, metodo_pago, creado_en, sucursal_id, clientes(nombre), sucursales(nombre), monto_efectivo, monto_tarjeta, monto_transferencia, monto_recibido_efectivo, cambio')
       .order('creado_en', { ascending: false }),
     supabase.from('clientes').select('id, nombre, telefono, correo, direccion').order('nombre'),
     supabase
@@ -41,6 +42,12 @@ export default async function VentasPage() {
       .select('producto_id, categoria_id, tipo, valor, activa, fecha_inicio, fecha_fin')
       .eq('activa', true),
     supabase.from('configuracion').select('id, margen_ganancia, iva_porcentaje').limit(1).single(),
+    supabase
+      .from('cortes_caja')
+      .select(
+        'id, sucursal_id, fondo_inicial, abierto_en, estado, efectivo_esperado, efectivo_contado, diferencia, cerrado_en, sucursales(nombre), usuario_apertura:usuarios!cortes_caja_usuario_apertura_id_fkey(nombre), usuario_cierre:usuarios!cortes_caja_usuario_cierre_id_fkey(nombre)'
+      )
+      .order('abierto_en', { ascending: false }),
   ])
 
   return (
@@ -60,6 +67,7 @@ export default async function VentasPage() {
         inventario={inventario}
         promociones={promociones || []}
         configuracion={configuracion || { id: '', margen_ganancia: 70, iva_porcentaje: 16 }}
+        cortesCaja={(cortesCaja || []) as any}
         esAdmin={usuario?.rol === 'admin_general'}
         usuario={usuario ? { id: user.id, rol: usuario.rol, sucursal_id: usuario.sucursal_id } : null}
       />

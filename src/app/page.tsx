@@ -73,20 +73,23 @@ export default async function Home() {
       </div>
 
       <main className="flex-1">
-        {/* Valores */}
+        {/* Misión y Visión */}
         <section className="bg-white">
-          <div className="mx-auto grid max-w-6xl gap-6 px-5 py-14 sm:grid-cols-3">
-            {[
-              { titulo: 'Calidad garantizada', texto: 'Productos de proveedores confiables, listos para uso clínico y doméstico.', icono: '✅' },
-              { titulo: 'Atención personalizada', texto: 'Te ayudamos a encontrar exactamente lo que necesitas, sin complicaciones.', icono: '🤝' },
-              { titulo: '3 sucursales', texto: 'Coacalco, Tultepec y más — siempre cerca de ti.', icono: '📍' },
-            ].map((v) => (
-              <div key={v.titulo} className="rounded-2xl bg-fondo-claro p-6">
-                <span className="text-3xl">{v.icono}</span>
-                <p className="mt-3 text-base font-bold text-navy">{v.titulo}</p>
-                <p className="mt-1.5 text-sm leading-relaxed text-gray-600">{v.texto}</p>
-              </div>
-            ))}
+          <div className="mx-auto grid max-w-6xl gap-6 px-5 py-14 sm:grid-cols-2">
+            <div className="rounded-2xl bg-fondo-claro p-8">
+              <span className="text-3xl">🎯</span>
+              <p className="mt-3 text-lg font-bold text-navy">Misión</p>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                Mejorar el bienestar diario y la calidad de vida de nuestros clientes ofreciendo productos médicos innovadores y útiles que faciliten la vida cotidiana y aporten comodidad a nuestros usuarios. Logramos esto mediante un esquema de atención personalizada, capacitación continua y un estándar de servicio de excelencia.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-fondo-claro p-8">
+              <span className="text-3xl">🔭</span>
+              <p className="mt-3 text-lg font-bold text-navy">Visión</p>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                Ser reconocidos como el aliado de confianza en el hogar y día a día de nuestros clientes, transformando el cuidado de la salud en una experiencia accesible, comprensible y sumamente humana.
+              </p>
+            </div>
           </div>
         </section>
 

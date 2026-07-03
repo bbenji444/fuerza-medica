@@ -7,7 +7,14 @@ import { precioConDescuento, promocionAplicable, Promocion } from '@/utils/promo
 import { descontarInventarioCarrito, restituirInventarioCarrito } from '@/utils/descontarInventarioCarrito'
 import { generarPdfTicket } from '@/utils/generarPdfTicket'
 
-const metodosPago = ['efectivo', 'tarjeta', 'transferencia']
+const modosPago = ['efectivo', 'tarjeta', 'transferencia', 'mixto'] as const
+type ModoPago = (typeof modosPago)[number]
+const labelModoPago: Record<ModoPago, string> = {
+  efectivo: 'Efectivo',
+  tarjeta: 'Tarjeta',
+  transferencia: 'Transferencia',
+  mixto: 'Pago mixto',
+}
 
 type Cliente = {
   id: string
@@ -60,6 +67,14 @@ type ItemCarrito = {
   precio_costo: number
 }
 
+type CorteCaja = {
+  id: string
+  sucursal_id: string
+  fondo_inicial: number
+  abierto_en: string
+  estado: string
+}
+
 function generarIdLocal() {
   return typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
@@ -91,7 +106,22 @@ export default function VentaRapidaPanel({
   const router = useRouter()
 
   const [sucursalId, setSucursalId] = useState(usuario?.sucursal_id || sucursales[0]?.id || '')
-  const [metodoPago, setMetodoPago] = useState('efectivo')
+
+  const [modoPago, setModoPago] = useState<ModoPago>('efectivo')
+  const [montoEfectivoInput, setMontoEfectivoInput] = useState('')
+  const [montoTarjetaInput, setMontoTarjetaInput] = useState('')
+  const [montoTransferenciaInput, setMontoTransferenciaInput] = useState('')
+  const [montoRecibidoInput, setMontoRecibidoInput] = useState('')
+
+  const [corteAbierto, setCorteAbierto] = useState<CorteCaja | null>(null)
+  const [efectivoEnCaja, setEfectivoEnCaja] = useState(0)
+  const [cargandoCaja, setCargandoCaja] = useState(true)
+  const [mostrarAbrirCaja, setMostrarAbrirCaja] = useState(false)
+  const [fondoInicialInput, setFondoInicialInput] = useState('')
+  const [mostrarCerrarCaja, setMostrarCerrarCaja] = useState(false)
+  const [efectivoContadoInput, setEfectivoContadoInput] = useState('')
+  const [guardandoCaja, setGuardandoCaja] = useState(false)
+  const [errorCaja, setErrorCaja] = useState('')
 
   const [mostrarCliente, setMostrarCliente] = useState(false)
   const [busquedaCliente, setBusquedaCliente] = useState('')
@@ -115,6 +145,85 @@ export default function VentaRapidaPanel({
   useEffect(() => {
     inputProductoRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    if (sucursalId) refrescarCaja(sucursalId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sucursalId])
+
+  async function refrescarCaja(suc: string) {
+    setCargandoCaja(true)
+    const { data: corte } = await supabase
+      .from('cortes_caja')
+      .select('id, sucursal_id, fondo_inicial, abierto_en, estado')
+      .eq('sucursal_id', suc)
+      .eq('estado', 'abierto')
+      .maybeSingle()
+
+    if (!corte) {
+      setCorteAbierto(null)
+      setEfectivoEnCaja(0)
+      setCargandoCaja(false)
+      return
+    }
+
+    const { data: ventasCorte } = await supabase
+      .from('ventas')
+      .select('monto_efectivo')
+      .eq('corte_caja_id', corte.id)
+
+    const suma = (ventasCorte || []).reduce((s, v: { monto_efectivo: number }) => s + (v.monto_efectivo || 0), 0)
+    setCorteAbierto(corte)
+    setEfectivoEnCaja(corte.fondo_inicial + suma)
+    setCargandoCaja(false)
+  }
+
+  async function abrirCaja() {
+    setGuardandoCaja(true)
+    setErrorCaja('')
+    const { error } = await supabase.from('cortes_caja').insert({
+      sucursal_id: sucursalId,
+      usuario_apertura_id: usuario?.id,
+      fondo_inicial: parseFloat(fondoInicialInput) || 0,
+    })
+    setGuardandoCaja(false)
+    if (error) {
+      setErrorCaja('Error al abrir caja: ' + error.message)
+      return
+    }
+    setMostrarAbrirCaja(false)
+    setFondoInicialInput('')
+    await refrescarCaja(sucursalId)
+  }
+
+  async function cerrarCaja() {
+    if (!corteAbierto) return
+    setGuardandoCaja(true)
+    setErrorCaja('')
+    const contado = parseFloat(efectivoContadoInput) || 0
+    const diferencia = Math.round((contado - efectivoEnCaja) * 100) / 100
+    const { error } = await supabase
+      .from('cortes_caja')
+      .update({
+        estado: 'cerrado',
+        usuario_cierre_id: usuario?.id,
+        efectivo_esperado: efectivoEnCaja,
+        efectivo_contado: contado,
+        diferencia,
+        cerrado_en: new Date().toISOString(),
+      })
+      .eq('id', corteAbierto.id)
+    setGuardandoCaja(false)
+    if (error) {
+      setErrorCaja('Error al cerrar caja: ' + error.message)
+      return
+    }
+    setMostrarCerrarCaja(false)
+    setEfectivoContadoInput('')
+    setCorteAbierto(null)
+    setEfectivoEnCaja(0)
+    router.refresh()
+  }
 
   useEffect(() => {
     carrito.forEach((item) => {
@@ -166,6 +275,24 @@ export default function VentaRapidaPanel({
     const existencia = existenciaProducto(i.producto_id)
     return existencia !== undefined && i.cantidad > existencia
   })
+
+  const montoEfectivoNum = modoPago === 'mixto' ? parseFloat(montoEfectivoInput) || 0 : modoPago === 'efectivo' ? total : 0
+  const montoTarjetaNum = modoPago === 'mixto' ? parseFloat(montoTarjetaInput) || 0 : modoPago === 'tarjeta' ? total : 0
+  const montoTransferenciaNum = modoPago === 'mixto' ? parseFloat(montoTransferenciaInput) || 0 : modoPago === 'transferencia' ? total : 0
+  const diferenciaMontos = Math.round((total - (montoEfectivoNum + montoTarjetaNum + montoTransferenciaNum)) * 100) / 100
+  const montosCuadran = Math.abs(diferenciaMontos) < 0.01
+  const montoRecibidoNum = montoRecibidoInput.trim() === '' ? montoEfectivoNum : parseFloat(montoRecibidoInput) || 0
+  const cambioCalculado = montoEfectivoNum > 0 ? Math.max(0, Math.round((montoRecibidoNum - montoEfectivoNum) * 100) / 100) : 0
+  const recibidoInsuficiente = montoEfectivoNum > 0 && montoRecibidoNum < montoEfectivoNum - 0.01
+  const diferenciaCierre = Math.round(((parseFloat(efectivoContadoInput) || 0) - efectivoEnCaja) * 100) / 100
+
+  function derivarMetodoPago() {
+    const activos = [montoEfectivoNum > 0, montoTarjetaNum > 0, montoTransferenciaNum > 0].filter(Boolean).length
+    if (activos > 1) return 'mixto'
+    if (montoEfectivoNum > 0) return 'efectivo'
+    if (montoTarjetaNum > 0) return 'tarjeta'
+    return 'transferencia'
+  }
 
   function agregarProducto(p: Producto) {
     const existente = carrito.find((i) => i.producto_id === p.id)
@@ -269,6 +396,11 @@ export default function VentaRapidaPanel({
     setNuevoCliente({ nombre: '', telefono: '', correo: '', direccion: '' })
     setMostrarCliente(false)
     setError('')
+    setModoPago('efectivo')
+    setMontoEfectivoInput('')
+    setMontoTarjetaInput('')
+    setMontoTransferenciaInput('')
+    setMontoRecibidoInput('')
     inputProductoRef.current?.focus()
   }
 
@@ -281,6 +413,18 @@ export default function VentaRapidaPanel({
     }
     if (!sucursalId) {
       setError('Selecciona una sucursal')
+      return
+    }
+    if (!corteAbierto) {
+      setError('Abre la caja antes de registrar una venta')
+      return
+    }
+    if (!montosCuadran) {
+      setError(`Los montos por método de pago no suman el total (falta ${diferenciaMontos > 0 ? '' : 'sobra '}$${Math.abs(diferenciaMontos).toFixed(2)})`)
+      return
+    }
+    if (recibidoInsuficiente) {
+      setError('El monto recibido en efectivo es menor al monto a cobrar en efectivo')
       return
     }
     if (modoNuevoCliente && !nuevoCliente.nombre.trim()) {
@@ -335,10 +479,16 @@ export default function VentaRapidaPanel({
         cliente_id: clienteId,
         sucursal_id: sucursalId,
         usuario_id: usuario?.id,
-        metodo_pago: metodoPago,
+        metodo_pago: derivarMetodoPago(),
         total,
+        corte_caja_id: corteAbierto.id,
+        monto_efectivo: montoEfectivoNum,
+        monto_tarjeta: montoTarjetaNum,
+        monto_transferencia: montoTransferenciaNum,
+        monto_recibido_efectivo: montoEfectivoNum > 0 ? montoRecibidoNum : null,
+        cambio: cambioCalculado,
       })
-      .select('id, folio, total, metodo_pago, creado_en, sucursales(nombre)')
+      .select('id, folio, total, metodo_pago, creado_en, sucursales(nombre), monto_efectivo, monto_tarjeta, monto_transferencia, monto_recibido_efectivo, cambio')
       .single()
 
     if (errVenta || !venta) {
@@ -372,6 +522,7 @@ export default function VentaRapidaPanel({
     reiniciarParaSiguienteVenta()
     router.refresh()
     onVentaRegistrada()
+    refrescarCaja(sucursalId)
   }
 
   async function descargarTicketConfirmacion() {
@@ -389,13 +540,18 @@ export default function VentaRapidaPanel({
 
   return (
     <div style={{ backgroundColor: 'white', borderRadius: '10px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
         <h2 style={{ color: '#0D1B3E', fontSize: '16px', fontWeight: 700 }}>Venta rápida</h2>
         {confirmacion && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ color: '#1A7A3E', fontSize: '13px', fontWeight: 600 }}>
               ✓ Venta {confirmacion.folio} registrada
             </span>
+            {confirmacion.venta.cambio > 0 && (
+              <span style={{ color: '#B81C1C', fontSize: '13px', fontWeight: 700, backgroundColor: '#FDE8E8', padding: '3px 10px', borderRadius: '6px' }}>
+                Cambio a entregar: ${confirmacion.venta.cambio.toFixed(2)}
+              </span>
+            )}
             <button
               onClick={descargarTicketConfirmacion}
               style={{ fontSize: '12px', color: '#1A6DD4', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
@@ -407,6 +563,91 @@ export default function VentaRapidaPanel({
               style={{ fontSize: '12px', color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}
             >
               ✕
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div style={{
+        marginBottom: '16px', padding: '14px 18px', borderRadius: '8px',
+        backgroundColor: corteAbierto ? '#E8F7EE' : '#FDE8E8',
+        border: `1px solid ${corteAbierto ? '#1A7A3E' : '#B81C1C'}`,
+      }}>
+        {cargandoCaja ? (
+          <span style={{ fontSize: '13px', color: '#888' }}>Cargando caja...</span>
+        ) : corteAbierto ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+              <div>
+                <p style={{ fontSize: '11px', color: '#1A7A3E', fontWeight: 700, margin: 0 }}>CAJA ABIERTA</p>
+                <p style={{ fontSize: '12px', color: '#333', margin: 0 }}>Fondo inicial: ${corteAbierto.fondo_inicial.toFixed(2)}</p>
+              </div>
+              <div>
+                <p style={{ fontSize: '11px', color: '#888', margin: 0 }}>Efectivo en caja ahora</p>
+                <p style={{ fontSize: '18px', fontWeight: 700, color: '#0D1B3E', margin: 0 }}>${efectivoEnCaja.toFixed(2)}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setMostrarCerrarCaja(true)}
+              style={{ fontSize: '13px', color: '#0D1B3E', background: 'white', border: '1px solid #0D1B3E', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontWeight: 600 }}
+            >
+              Cerrar caja
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            <p style={{ fontSize: '13px', color: '#B81C1C', fontWeight: 600, margin: 0 }}>Caja cerrada — abre la caja para poder registrar ventas</p>
+            <button
+              onClick={() => setMostrarAbrirCaja(true)}
+              style={{ fontSize: '13px', color: 'white', background: '#1A6DD4', border: 'none', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontWeight: 600 }}
+            >
+              Abrir caja
+            </button>
+          </div>
+        )}
+
+        {errorCaja && <p style={{ color: '#B81C1C', fontSize: '12px', marginTop: '8px' }}>{errorCaja}</p>}
+
+        {mostrarAbrirCaja && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.08)', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ fontSize: '12px', color: '#333', display: 'block', marginBottom: '4px' }}>Fondo inicial (efectivo físico en caja ahora)</label>
+              <input
+                type="number" step="0.01" autoFocus value={fondoInicialInput}
+                onChange={(e) => setFondoInicialInput(e.target.value)}
+                style={{ width: '140px', padding: '8px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '14px' }}
+              />
+            </div>
+            <button onClick={abrirCaja} disabled={guardandoCaja} style={{ padding: '8px 14px', borderRadius: '6px', border: 'none', backgroundColor: '#1A6DD4', color: 'white', fontWeight: 600, fontSize: '13px', cursor: 'pointer', opacity: guardandoCaja ? 0.6 : 1 }}>
+              {guardandoCaja ? 'Abriendo...' : 'Confirmar apertura'}
+            </button>
+            <button onClick={() => setMostrarAbrirCaja(false)} style={{ padding: '8px 14px', borderRadius: '6px', border: 'none', background: 'none', color: '#888', fontSize: '13px', cursor: 'pointer' }}>
+              Cancelar
+            </button>
+          </div>
+        )}
+
+        {mostrarCerrarCaja && corteAbierto && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.08)', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div>
+              <p style={{ fontSize: '12px', color: '#333', margin: '0 0 4px' }}>Efectivo esperado: <strong>${efectivoEnCaja.toFixed(2)}</strong></p>
+              <label style={{ fontSize: '12px', color: '#333', display: 'block', marginBottom: '4px' }}>Efectivo contado físicamente</label>
+              <input
+                type="number" step="0.01" autoFocus value={efectivoContadoInput}
+                onChange={(e) => setEfectivoContadoInput(e.target.value)}
+                style={{ width: '140px', padding: '8px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '14px' }}
+              />
+            </div>
+            {efectivoContadoInput.trim() !== '' && (
+              <p style={{ fontSize: '13px', fontWeight: 600, color: diferenciaCierre === 0 ? '#1A7A3E' : diferenciaCierre > 0 ? '#1A6DD4' : '#B81C1C', margin: 0 }}>
+                {diferenciaCierre === 0 ? 'Cuadra exacto' : diferenciaCierre > 0 ? `Sobrante: $${diferenciaCierre.toFixed(2)}` : `Faltante: $${Math.abs(diferenciaCierre).toFixed(2)}`}
+              </p>
+            )}
+            <button onClick={cerrarCaja} disabled={guardandoCaja || efectivoContadoInput.trim() === ''} style={{ padding: '8px 14px', borderRadius: '6px', border: 'none', backgroundColor: '#0D1B3E', color: 'white', fontWeight: 600, fontSize: '13px', cursor: 'pointer', opacity: (guardandoCaja || efectivoContadoInput.trim() === '') ? 0.6 : 1 }}>
+              {guardandoCaja ? 'Cerrando...' : 'Confirmar cierre'}
+            </button>
+            <button onClick={() => setMostrarCerrarCaja(false)} style={{ padding: '8px 14px', borderRadius: '6px', border: 'none', background: 'none', color: '#888', fontSize: '13px', cursor: 'pointer' }}>
+              Cancelar
             </button>
           </div>
         )}
@@ -427,16 +668,6 @@ export default function VentaRapidaPanel({
         >
           {sucursales.map((s) => (
             <option key={s.id} value={s.id}>{s.nombre}</option>
-          ))}
-        </select>
-
-        <select
-          value={metodoPago}
-          onChange={(e) => setMetodoPago(e.target.value)}
-          style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
-        >
-          {metodosPago.map((m) => (
-            <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
           ))}
         </select>
 
@@ -517,6 +748,61 @@ export default function VentaRapidaPanel({
           )}
         </div>
       )}
+
+      <div style={{ backgroundColor: '#F9FBFE', border: '1px solid #E0E8F5', borderRadius: '8px', padding: '14px', marginBottom: '16px' }}>
+        <label style={{ fontSize: '12px', color: '#888', fontWeight: 600, display: 'block', marginBottom: '8px' }}>Método de pago</label>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+          {modosPago.map((m) => (
+            <button
+              key={m}
+              onClick={() => { setModoPago(m); setMontoRecibidoInput('') }}
+              style={{
+                padding: '8px 16px', borderRadius: '999px', border: modoPago === m ? 'none' : '1px solid #E0E8F5',
+                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                backgroundColor: modoPago === m ? '#1A6DD4' : 'white', color: modoPago === m ? 'white' : '#333',
+              }}
+            >
+              {labelModoPago[m]}
+            </button>
+          ))}
+        </div>
+
+        {modoPago === 'mixto' && (
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
+            <div>
+              <label style={{ fontSize: '11px', color: '#888' }}>Efectivo $</label>
+              <input type="number" step="0.01" value={montoEfectivoInput} onChange={(e) => setMontoEfectivoInput(e.target.value)} style={{ width: '100px', padding: '7px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px', display: 'block' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '11px', color: '#888' }}>Tarjeta $</label>
+              <input type="number" step="0.01" value={montoTarjetaInput} onChange={(e) => setMontoTarjetaInput(e.target.value)} style={{ width: '100px', padding: '7px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px', display: 'block' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '11px', color: '#888' }}>Transferencia $</label>
+              <input type="number" step="0.01" value={montoTransferenciaInput} onChange={(e) => setMontoTransferenciaInput(e.target.value)} style={{ width: '100px', padding: '7px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px', display: 'block' }} />
+            </div>
+            <p style={{ fontSize: '13px', fontWeight: 600, color: montosCuadran ? '#1A7A3E' : '#B81C1C', marginTop: '14px' }}>
+              {montosCuadran ? 'Cuadra con el total ✓' : diferenciaMontos > 0 ? `Falta $${diferenciaMontos.toFixed(2)}` : `Sobra $${Math.abs(diferenciaMontos).toFixed(2)}`}
+            </p>
+          </div>
+        )}
+
+        {montoEfectivoNum > 0 && (
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div>
+              <label style={{ fontSize: '11px', color: '#888' }}>Recibido en efectivo</label>
+              <input
+                type="number" step="0.01" placeholder={montoEfectivoNum.toFixed(2)}
+                value={montoRecibidoInput} onChange={(e) => setMontoRecibidoInput(e.target.value)}
+                style={{ width: '110px', padding: '7px', border: recibidoInsuficiente ? '1px solid #B81C1C' : '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px', display: 'block' }}
+              />
+            </div>
+            <p style={{ fontSize: '15px', fontWeight: 700, color: '#0D1B3E' }}>
+              Cambio a entregar: ${cambioCalculado.toFixed(2)}
+            </p>
+          </div>
+        )}
+      </div>
 
       <input
         ref={inputProductoRef}
@@ -708,14 +994,14 @@ export default function VentaRapidaPanel({
 
       <button
         onClick={guardarVenta}
-        disabled={guardando || hayExcesoStock || carrito.length === 0}
+        disabled={guardando || hayExcesoStock || carrito.length === 0 || !corteAbierto || !montosCuadran || recibidoInsuficiente}
         style={{
           width: '100%', marginTop: '16px', padding: '14px', backgroundColor: '#1A6DD4', color: 'white',
           border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 700, cursor: 'pointer',
-          opacity: (guardando || hayExcesoStock || carrito.length === 0) ? 0.6 : 1,
+          opacity: (guardando || hayExcesoStock || carrito.length === 0 || !corteAbierto || !montosCuadran || recibidoInsuficiente) ? 0.6 : 1,
         }}
       >
-        {guardando ? 'Registrando...' : 'Registrar venta'}
+        {guardando ? 'Registrando...' : !corteAbierto ? 'Abre la caja para vender' : 'Registrar venta'}
       </button>
     </div>
   )

@@ -29,9 +29,10 @@ src/
 │   │   │   ├── CotizacionesTable.tsx ← Lista, exportar PDF, borrar, convertir en venta
 │   │   │   └── NuevaCotizacionModal.tsx ← Crear/editar cotización (cliente, productos, descuentos)
 │   │   ├── ventas/
-│   │   │   ├── page.tsx          ← Lista de ventas (server component)
-│   │   │   ├── VentasTable.tsx   ← Panel de venta rápida siempre visible + botón "Historial" que oculta/muestra el listado pasado
-│   │   │   └── VentaRapidaPanel.tsx ← Panel inline (NO modal): sin pasos, cliente opcional/colapsado, escaneo de código de barras, valida y descuenta stock
+│   │   │   ├── page.tsx          ← Lista de ventas + cortes de caja (server component)
+│   │   │   ├── VentasTable.tsx   ← Panel de venta rápida siempre visible + botones "Historial" y "Cortes de caja" que ocultan/muestran sus listados
+│   │   │   ├── VentaRapidaPanel.tsx ← Panel inline (NO modal): sin pasos, cliente opcional/colapsado, escaneo de código de barras, valida y descuenta stock, control de caja (abrir/cerrar) y pagos mixtos
+│   │   │   └── CortesCajaTable.tsx ← Historial de cortes de caja (fondo inicial, efectivo esperado/contado, diferencia, quién abrió/cerró)
 │   │   ├── reportes/
 │   │   │   ├── page.tsx          ← Desglose de ventas (server component, solo admin_general)
 │   │   │   └── ReportesView.tsx  ← Selector Hoy/Semana/Mes o rango de fechas, tabla por producto+fecha, PDF
@@ -103,8 +104,9 @@ middleware.ts                     ← Protege rutas /admin, redirige a /login si
 - **clientes** — Datos de clientes para cotizaciones/ventas (nombre, telefono, correo, direccion)
 - **cotizaciones** — Cabecera (cliente_id, sucursal_id, usuario_id, estado, total). **`estado` CHECK constraint**: solo `'borrador'`, `'enviada'`, `'aceptada'`, `'cancelada'` (⚠️ NO `'rechazada'`, falla con error 23514)
 - **cotizacion_items** — Detalle por cotización (cotizacion_id, producto_id, cantidad, precio_unitario, subtotal generado)
-- **ventas** — Cabecera (folio autogenerado `V-0001` vía secuencia, sucursal_id, usuario_id, cliente_id nullable, metodo_pago, total, cotizacion_id nullable si vino de conversión)
+- **ventas** — Cabecera (folio autogenerado `V-0001` vía secuencia, sucursal_id, usuario_id, cliente_id nullable, metodo_pago: `'efectivo'|'tarjeta'|'transferencia'|'mixto'`, total, cotizacion_id nullable si vino de conversión). **Pagos mixtos**: `monto_efectivo/monto_tarjeta/monto_transferencia` (deben sumar `total`; si más de uno es > 0, `metodo_pago = 'mixto'`), `monto_recibido_efectivo` (lo que entregó el cliente en efectivo) y `cambio` (recibido - monto_efectivo) para saber cuánto regresar. `corte_caja_id` FK a `cortes_caja` (a qué turno de caja pertenece).
 - **venta_items** — Detalle por venta (venta_id, producto_id, cantidad, precio_unitario, subtotal generado)
+- **cortes_caja** — Control de caja/cambio por sucursal (`/admin/ventas`, panel "Venta rápida"). Un renglón por apertura de caja: `fondo_inicial` (efectivo físico capturado al abrir), `estado` (`'abierto'|'cerrado'`, único **abierto** por sucursal vía índice parcial), `usuario_apertura_id`/`usuario_cierre_id`. Al cerrar: `efectivo_esperado` (snapshot de `fondo_inicial + Σ monto_efectivo` de las ventas de ese corte, calculado en el momento del cierre), `efectivo_contado` (conteo físico que captura el empleado) y `diferencia` (contado − esperado, sobrante/faltante). "Efectivo en caja ahora" en el panel de Ventas se recalcula sumando `monto_efectivo` de las ventas del corte abierto — no requiere corte activo para vender por tarjeta/transferencia, pero **el panel bloquea "Registrar venta" si no hay caja abierta**, sin importar el método (simplifica el modelo mental: un turno de caja cubre todas las ventas, igual que un POS normal).
 - **promociones** — Descuentos por producto o categoría (tipo: porcentaje/precio_fijo/precio_especial, valor, producto_id o categoria_id, activa, fecha_inicio/fecha_fin opcionales)
 - **solicitudes_web** — Tabla histórica, ya no se usa: el formulario público "Solicitar producto" y `/admin/solicitudes` se quitaron (todo contacto va por WhatsApp)
 - **configuracion** — Una sola fila con `margen_ganancia` (default 70) e `iva_porcentaje` (default 16), usada por la Calculadora de precio en Ventas
@@ -128,6 +130,7 @@ La mayoría son para `authenticated` (panel admin). Las marcadas `anon` son para
 - **clientes**: SELECT/INSERT/UPDATE/DELETE abiertos (sin scoping por sucursal).
 - **usuarios**: SELECT solo `auth.uid() = id or es_admin()`. Sin políticas de INSERT/UPDATE (solo vía API routes con service role).
 - **cotizaciones, ventas**: SELECT/INSERT/UPDATE(solo cotizaciones)/DELETE scoped a `es_admin() or sucursal_id = mi_sucursal()`.
+- **cortes_caja**: mismo patrón (`es_admin() or sucursal_id = mi_sucursal()`) para SELECT/INSERT/UPDATE; DELETE solo `es_admin()` (por si se abre uno por error).
 - **cotizacion_items, venta_items**: heredan el alcance de su cabecera vía `exists(...)`.
 - **promociones**: SELECT abierto; INSERT/UPDATE/DELETE solo `es_admin()`.
 - **configuracion**: SELECT abierto; UPDATE solo `es_admin()`.
@@ -197,7 +200,11 @@ Uso interno, no toca `precio_venta`. Costo (manual o de un producto) → +Gananc
 También **integrada en la tabla del carrito de `VentaRapidaPanel`** (columnas "Costo" y "% Ganancia" por renglón): el % Ganancia muestra el margen que YA se aplica hoy (`margenActual()`: `(precio_sin_iva/costo - 1) * 100`, IVA % compartido editable arriba). Cambiar el % recalcula y aplica el precio al instante; "Precio" sigue editable como override manual. "Ganancia % para todos" + "Aplicar a todos" fija el mismo % en todos los renglones. Costo siempre editable (si el producto no tiene costo, $0.00 capturable ahí). Columna **"IVA"** por renglón (`subtotal - subtotal/(1+iva/100)`) + "IVA incluido: $X" junto al Total.
 
 ### Ventas (`/admin/ventas`) — optimizado para velocidad, no para historial
-No es modal: `VentaRapidaPanel` siempre visible, sin pasos (cliente, sucursal/método de pago, productos en una sola pantalla). Cliente opcional y colapsado por defecto. Historial detrás de botón "Historial (N)" (antes era la vista default, iba contra el flujo rápido de cajeros). Soporte de escáner de código de barras (ver abajo). Valida y descuenta stock atómicamente — si no hay suficiente, no se crea la venta y se revierte cualquier descuento parcial. Si un renglón tiene `existencia === 0` o cantidad > stock, consulta `disponibilidad_producto_otras_sucursales` y muestra "Disponible en: X (n), Y (n)". Al completar, el panel se reinicia solo con confirmación de folio + "Generar ticket" opcional. Historial conserva "Generar ticket" y "Borrar" (restituye stock).
+No es modal: `VentaRapidaPanel` siempre visible, sin pasos (cliente, sucursal/método de pago, productos en una sola pantalla). Cliente opcional y colapsado por defecto. Historial detrás de botón "Historial (N)" (antes era la vista default, iba contra el flujo rápido de cajeros). Soporte de escáner de código de barras (ver abajo). Valida y descuenta stock atómicamente — si no hay suficiente, no se crea la venta y se revierte cualquier descuento parcial. Si un renglón tiene `existencia === 0` o cantidad > stock, consulta `disponibilidad_producto_otras_sucursales` y muestra "Disponible en: X (n), Y (n)". Al completar, el panel se reinicia solo con confirmación de folio + "Generar ticket" opcional (si hubo cambio, se muestra "Cambio a entregar" junto a la confirmación). Historial conserva "Generar ticket" y "Borrar" (restituye stock); columna "Método de pago" muestra el desglose por método en un `title` (tooltip) cuando es "mixto", y el cambio entregado debajo si aplica.
+
+**Control de caja** — banner siempre visible arriba del panel (`corteAbierto`/`efectivoEnCaja` en `VentaRapidaPanel`, atado a la sucursal seleccionada). Si no hay caja abierta para esa sucursal, "Registrar venta" queda deshabilitado ("Abre la caja para vender") — se requiere abrir caja para cualquier venta, sin importar el método de pago. "Abrir caja" pide el fondo inicial (efectivo físico ya en la caja); de ahí "Efectivo en caja ahora" = `fondo_inicial + Σ monto_efectivo` de las ventas del corte, y se recalcula justo después de cada venta (no hay polling, solo se refresca en los momentos en que puede haber cambiado). "Cerrar caja" muestra el efectivo esperado (el mismo total en pantalla), pide el conteo físico y calcula sobrante/faltante antes de guardar el corte como cerrado. Botón "Cortes de caja (N)" (`CortesCajaTable.tsx`) junto a "Historial" lista los cortes pasados y su resultado — visible para todos los roles, cada quien ve solo los de su sucursal vía RLS (admin ve todas).
+
+**Pagos mixtos** — selector de modo (Efectivo/Tarjeta/Transferencia/"Pago mixto") en vez del select único de antes. En modo mixto se capturan los tres montos y deben sumar el total exacto (tolerancia de 1 centavo) o se bloquea el guardado. Si hay componente en efectivo (en cualquier modo), aparece "Recibido en efectivo" (placeholder = monto exacto, si se deja vacío se asume pago exacto) y se calcula "Cambio a entregar" en vivo. `metodo_pago` se deriva automáticamente: si más de un monto es > 0, queda `'mixto'`.
 
 ## Escaneo de código de barras (Cotizaciones y Ventas)
 Un escáner USB se comporta como teclado: escribe el código y presiona Enter. Patrón en `NuevaCotizacionModal.tsx` y `VentaRapidaPanel.tsx`:
@@ -227,8 +234,9 @@ Ventas de hoy/mes (clicables → Reportes), cotizaciones pendientes (borrador+en
 
 ## Página pública (sin login — `/`, `/catalogo`, `/producto/[id]`)
 Usa Tailwind y los mismos colores navy/azul. `SiteHeader`/`SiteFooter` compartidos. Todas son `async` server components con `@/utils/supabase/server` **sin** pasar por `obtenerUsuarioActual()` (no hay sesión, nunca redirigir a `/login`). El middleware solo protege `/admin`. Ya **no existe `/sucursales` como ruta aparte** — fusionada en la landing (`id="sucursales"`).
-- **Landing (`/`)** — orden: hero con video, 3 tarjetas de valores, "Los más vendidos", "Nuestras Marcas", "Sucursales" (con mapas), CTA final, footer.
+- **Landing (`/`)** — orden: hero con video, Misión y Visión, "Los más vendidos", "Nuestras Marcas", "Sucursales" (con mapas), CTA final, footer.
   - **Hero**: `<video autoPlay loop muted playsInline>` en `public/hero-video.mov` (buscar el `.mov` más reciente si se reemplaza; no se transcodifica, no hay ffmpeg aquí). Sin overlay — contraste vía `text-white` + `drop-shadow`. `SiteHeader`+hero en wrapper `flex h-screen flex-col` (hero `flex-1`) para ocupar la pantalla completa. Video sobre-escalado+centrado (translate -50%/-50%) para evitar filo blanco por redondeo de aspect-ratio; `margin:0` en html,body también.
+  - **"Misión y Visión"**: dos tarjetas lado a lado (una columna en móvil) en `src/app/page.tsx`, texto hardcodeado (no viene de la base de datos) — reemplazó la sección anterior de 3 recuadros ("Calidad garantizada"/"Atención personalizada"/"3 sucursales").
   - **"Los más vendidos"** (`MasVendidosSection.tsx`, client): curado a mano, no ventas reales. Si `productos_destacados` está vacío, `return null`.
   - **"Nuestras Marcas"** (`MarcasCarousel.tsx`): carrusel CSS puro — lista duplicada (`[...marcas, ...marcas]`) en `flex w-max` con `animate-marcas-scroll` (`translateX(0)→translateX(-50%)`, 35s linear infinite). Logos en `public/marcas/*`.
   - **"Sucursales"**: mapas + dirección + teléfono + "Cómo llegar", `id="sucursales"`. Header/footer enlazan a `/#sucursales` con `scroll-behavior: smooth`.
@@ -242,7 +250,8 @@ Usa Tailwind y los mismos colores navy/azul. `SiteHeader`/`SiteFooter` compartid
 - **Deploy**: [ ] Subir a Vercel · [ ] Configurar variables de entorno en Vercel · [ ] Conectar dominio
 
 ## SQL
-No hay SQL pendiente. Todas las migraciones (storage de imágenes, RLS de página pública/`anon`, destacados, detalle de producto público, variantes) ya se corrieron y verificaron contra la base real. Los `add-*.sql` en la raíz son registro histórico — no volver a ejecutarlos.
+⚠️ **Pendiente de ejecutar manualmente**: `add-caja-y-pagos-mixtos.sql` (tabla `cortes_caja` + columnas de pagos mixtos/cambio en `ventas` + políticas RLS) — Benji debe correrlo en el SQL Editor de Supabase; el código ya asume que existe (build local pasa porque las llamadas a Supabase no fallan en tiempo de compilación, pero fallarán en runtime hasta que se ejecute). Verificar después de que Benji confirme haberlo corrido.
+El resto de migraciones (storage de imágenes, RLS de página pública/`anon`, destacados, detalle de producto público, variantes) ya se corrieron y verificaron contra la base real. Los demás `add-*.sql` en la raíz son registro histórico — no volver a ejecutarlos.
 Nota reutilizable: al probar INSERT como `anon` vía REST, usar `Prefer: return=minimal` (igual que `supabase-js` sin `.select()` encadenado) — pedir `return=representation` sin política de SELECT para `anon` da un falso positivo de error.
 
 ## Notas importantes

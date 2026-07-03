@@ -15,10 +15,18 @@ type VentaTicket = {
   metodo_pago: string
   creado_en: string
   sucursales: { nombre: string } | null
+  monto_efectivo?: number | null
+  monto_tarjeta?: number | null
+  monto_transferencia?: number | null
+  monto_recibido_efectivo?: number | null
+  cambio?: number | null
 }
 
 export async function generarPdfTicket(venta: VentaTicket, items: ItemTicket[]) {
-  const doc = new jsPDF({ unit: 'mm', format: [80, 165 + items.length * 6] })
+  const esMixto = venta.metodo_pago === 'mixto'
+  const tieneCambio = (venta.cambio || 0) > 0
+  const lineasExtra = (esMixto ? 3 : 0) + (tieneCambio ? 2 : 0)
+  const doc = new jsPDF({ unit: 'mm', format: [80, 165 + items.length * 6 + lineasExtra * 5] })
 
   let y = 6
 
@@ -66,6 +74,33 @@ export async function generarPdfTicket(venta: VentaTicket, items: ItemTicket[]) 
   doc.setFontSize(11)
   doc.setTextColor(13, 27, 62)
   doc.text(`Total: $${venta.total.toFixed(2)}`, 75, finalY + 8, { align: 'right' })
+
+  let yPago = finalY + 14
+  doc.setFontSize(8)
+  doc.setTextColor(80, 80, 80)
+
+  if (esMixto) {
+    if (venta.monto_efectivo) {
+      doc.text(`Efectivo: $${venta.monto_efectivo.toFixed(2)}`, 75, yPago, { align: 'right' })
+      yPago += 5
+    }
+    if (venta.monto_tarjeta) {
+      doc.text(`Tarjeta: $${venta.monto_tarjeta.toFixed(2)}`, 75, yPago, { align: 'right' })
+      yPago += 5
+    }
+    if (venta.monto_transferencia) {
+      doc.text(`Transferencia: $${venta.monto_transferencia.toFixed(2)}`, 75, yPago, { align: 'right' })
+      yPago += 5
+    }
+  }
+
+  if (tieneCambio) {
+    doc.text(`Recibido en efectivo: $${(venta.monto_recibido_efectivo || 0).toFixed(2)}`, 75, yPago, { align: 'right' })
+    yPago += 5
+    doc.setFontSize(9)
+    doc.setTextColor(13, 27, 62)
+    doc.text(`Cambio: $${(venta.cambio || 0).toFixed(2)}`, 75, yPago, { align: 'right' })
+  }
 
   doc.save(`ticket-${venta.folio}.pdf`)
 }
