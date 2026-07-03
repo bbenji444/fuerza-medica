@@ -20,6 +20,7 @@ type Producto = {
   activo: boolean
   imagen_url?: string | null
   imagen_url_hover?: string | null
+  imagenes?: string[] | null
   descripcion?: string | null
 }
 
@@ -92,6 +93,9 @@ export default function InventarioTable({
   const [previewImagen, setPreviewImagen] = useState<string>('')
   const [archivoImagenHover, setArchivoImagenHover] = useState<File | null>(null)
   const [previewImagenHover, setPreviewImagenHover] = useState<string>('')
+  const [imagenesGaleria, setImagenesGaleria] = useState<string[]>([])
+  const [archivosGaleriaNuevos, setArchivosGaleriaNuevos] = useState<File[]>([])
+  const [previewsGaleriaNuevos, setPreviewsGaleriaNuevos] = useState<string[]>([])
   const [descripcionImagen, setDescripcionImagen] = useState('')
   const [subiendoImagen, setSubiendoImagen] = useState(false)
   const [errorImagen, setErrorImagen] = useState('')
@@ -428,6 +432,9 @@ export default function InventarioTable({
     setPreviewImagen('')
     setArchivoImagenHover(null)
     setPreviewImagenHover('')
+    setImagenesGaleria(i.productos?.imagenes || [])
+    setArchivosGaleriaNuevos([])
+    setPreviewsGaleriaNuevos([])
     setDescripcionImagen(i.productos?.descripcion || '')
     setErrorImagen('')
   }
@@ -462,6 +469,35 @@ export default function InventarioTable({
     setPreviewImagenHover(URL.createObjectURL(archivo))
   }
 
+  function elegirArchivosGaleria(archivos: FileList | null) {
+    if (!archivos) return
+    const espacioDisponible = 6 - imagenesGaleria.length - archivosGaleriaNuevos.length
+    if (espacioDisponible <= 0) {
+      setErrorImagen('Ya tienes 6 fotos en la galería. Quita alguna para agregar otra.')
+      return
+    }
+    const candidatos = Array.from(archivos)
+    const validos = candidatos.filter((a) => a.type.startsWith('image/') && a.size <= 5 * 1024 * 1024).slice(0, espacioDisponible)
+
+    if (validos.length < candidatos.length) {
+      setErrorImagen('Algunas imágenes se omitieron (deben ser imágenes de máx. 5MB, y máximo 6 en total).')
+    } else {
+      setErrorImagen('')
+    }
+
+    setArchivosGaleriaNuevos((prev) => [...prev, ...validos])
+    setPreviewsGaleriaNuevos((prev) => [...prev, ...validos.map((a) => URL.createObjectURL(a))])
+  }
+
+  function quitarImagenGaleriaExistente(idx: number) {
+    setImagenesGaleria((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  function quitarArchivoGaleriaNuevo(idx: number) {
+    setArchivosGaleriaNuevos((prev) => prev.filter((_, i) => i !== idx))
+    setPreviewsGaleriaNuevos((prev) => prev.filter((_, i) => i !== idx))
+  }
+
   async function subirImagenAStorage(archivo: File, sufijo: string, productoId: string) {
     const extension = archivo.name.split('.').pop() || 'jpg'
     const ruta = `${productoId}${sufijo}.${extension}`
@@ -483,13 +519,20 @@ export default function InventarioTable({
     setSubiendoImagen(true)
     setErrorImagen('')
 
-    const cambios: { imagen_url?: string; imagen_url_hover?: string; descripcion: string | null } = {
+    const cambios: { imagen_url?: string; imagen_url_hover?: string; imagenes: string[]; descripcion: string | null } = {
+      imagenes: imagenesGaleria,
       descripcion: descripcionImagen.trim() || null,
     }
 
     try {
       if (archivoImagen) cambios.imagen_url = await subirImagenAStorage(archivoImagen, '', productoId)
       if (archivoImagenHover) cambios.imagen_url_hover = await subirImagenAStorage(archivoImagenHover, '-hover', productoId)
+      if (archivosGaleriaNuevos.length > 0) {
+        const urlsNuevas = await Promise.all(
+          archivosGaleriaNuevos.map((archivo, idx) => subirImagenAStorage(archivo, `-galeria-${Date.now()}-${idx}`, productoId))
+        )
+        cambios.imagenes = [...imagenesGaleria, ...urlsNuevas].slice(0, 6)
+      }
     } catch (err) {
       setSubiendoImagen(false)
       setErrorImagen(err instanceof Error ? err.message : 'Error al subir la imagen')
@@ -1316,6 +1359,70 @@ export default function InventarioTable({
                 </button>
               )}
             </div>
+
+            <p style={{ color: '#0D1B3E', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>
+              Galería de fotos ({imagenesGaleria.length + archivosGaleriaNuevos.length}/6)
+            </p>
+            <p style={{ color: '#888', fontSize: '12px', marginBottom: '8px' }}>
+              Se muestran como miniaturas seleccionables en la página del producto (con efecto de lupa en la imagen grande).
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+              {imagenesGaleria.map((url, idx) => (
+                <div key={url + idx} style={{ position: 'relative', width: '72px', height: '72px' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={`Foto ${idx + 1}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '6px', border: '1px solid #E0E8F5', backgroundColor: '#F4F7FC' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => quitarImagenGaleriaExistente(idx)}
+                    disabled={subiendoImagen}
+                    style={{
+                      position: 'absolute', top: '-6px', right: '-6px', width: '20px', height: '20px', borderRadius: '50%',
+                      backgroundColor: '#B81C1C', color: 'white', border: '2px solid white', fontSize: '11px', lineHeight: '1',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                    aria-label="Quitar foto"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {previewsGaleriaNuevos.map((url, idx) => (
+                <div key={url + idx} style={{ position: 'relative', width: '72px', height: '72px' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={`Foto nueva ${idx + 1}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '6px', border: '2px solid #1A6DD4', backgroundColor: '#F4F7FC' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => quitarArchivoGaleriaNuevo(idx)}
+                    disabled={subiendoImagen}
+                    style={{
+                      position: 'absolute', top: '-6px', right: '-6px', width: '20px', height: '20px', borderRadius: '50%',
+                      backgroundColor: '#B81C1C', color: 'white', border: '2px solid white', fontSize: '11px', lineHeight: '1',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                    aria-label="Quitar foto"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            {imagenesGaleria.length + archivosGaleriaNuevos.length < 6 && (
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => elegirArchivosGaleria(e.target.files)}
+                style={{ fontSize: '13px', marginBottom: '20px', display: 'block' }}
+              />
+            )}
 
             <p style={{ color: '#0D1B3E', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
               Descripción del producto

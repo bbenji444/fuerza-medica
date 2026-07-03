@@ -103,21 +103,30 @@ export default function SiteHeader() {
           ────────────────────────────────────────── */}
       <div className="hidden sm:flex">
 
-        {/* Logo — ocupa toda la altura del header */}
+        {/* Logo — ícono hasta la izquierda, texto (tagline + nombre) a la derecha */}
         <Link
           href="/"
           onClick={() => setAbierto(false)}
-          className="relative flex shrink-0 self-stretch"
-          style={{ width: '250px' }}
+          className="flex shrink-0 items-center gap-3 self-stretch pl-5 pr-4"
         >
-          <Image
-            src="/logo fuerza medica.jpg"
-            alt="Fuerza Médica"
-            fill
-            sizes="250px"
-            priority
-            style={{ objectFit: 'contain', objectPosition: 'center', padding: '6px 0 6px 16px' }}
-          />
+          <span className="relative h-16 w-16 shrink-0 lg:h-20 lg:w-20">
+            <Image
+              src="/logo-icono.png"
+              alt="Fuerza Médica"
+              fill
+              sizes="80px"
+              priority
+              style={{ objectFit: 'contain' }}
+            />
+          </span>
+          <span className="flex flex-col whitespace-nowrap">
+            <span className="text-[11px] font-semibold uppercase tracking-normal text-azul lg:text-xs">
+              Equipo médico/ortopédico
+            </span>
+            <span className="text-2xl font-extrabold leading-none tracking-tight text-navy lg:text-[28px]">
+              Fuerza Médica
+            </span>
+          </span>
         </Link>
 
         {/* Columna derecha — sin overflow-hidden para que el dropdown no se corte */}
@@ -244,10 +253,13 @@ export default function SiteHeader() {
           ────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-5 py-3 sm:hidden">
         <Link href="/" onClick={() => setAbierto(false)} className="flex shrink-0 items-center gap-2">
-          <span className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white shadow-sm">
-            <Image src="/logo fuerza medica.jpg" alt="Fuerza Médica" width={44} height={44} className="object-contain" />
+          <Image src="/logo-icono.png" alt="Fuerza Médica" width={40} height={40} className="object-contain" />
+          <span className="flex flex-col whitespace-nowrap">
+            <span className="text-[9px] font-semibold uppercase tracking-normal text-azul">
+              Equipo médico/ortopédico
+            </span>
+            <span className="text-base font-extrabold leading-tight tracking-tight text-navy">Fuerza Médica</span>
           </span>
-          <span className="text-base font-bold text-navy tracking-tight">Fuerza Médica</span>
         </Link>
         <div className="ml-auto flex items-center gap-3">
           <button onClick={abrirCarrito} className="relative" aria-label="Ver carrito">

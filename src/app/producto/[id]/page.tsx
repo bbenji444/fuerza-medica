@@ -13,7 +13,7 @@ export default async function ProductoPage({ params }: { params: Promise<{ id: s
   const [{ data: producto }, { data: categorias }, { data: sucursalesData }, { data: disponibilidadData }] = await Promise.all([
     supabase
       .from('productos')
-      .select('id, codigo, nombre, precio_venta, categoria_id, imagen_url, imagen_url_hover, descripcion, variante_grupo_id, variante_nombre, variante_orden')
+      .select('id, codigo, nombre, precio_venta, categoria_id, imagen_url, imagen_url_hover, imagenes, descripcion, variante_grupo_id, variante_nombre, variante_orden')
       .eq('id', id)
       .eq('activo', true)
       .maybeSingle(),
@@ -101,7 +101,6 @@ export default async function ProductoPage({ params }: { params: Promise<{ id: s
         <ProductoDetalleClient
           producto={producto}
           nombreCategoria={nombreCategoria}
-          disponibilidad={disponibilidad}
           totalDisponible={totalDisponible}
           variantes={variantes}
           similares={similares}

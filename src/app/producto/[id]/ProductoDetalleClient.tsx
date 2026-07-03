@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import ProductoGaleria from '../../components/ProductoGaleria'
 import ProductoImagen from '../../components/ProductoImagen'
 import { useCart } from '../../components/CartContext'
 
@@ -12,11 +13,10 @@ type Producto = {
   precio_venta: number
   imagen_url: string | null
   imagen_url_hover: string | null
+  imagenes: string[] | null
   descripcion: string | null
   variante_nombre?: string | null
 }
-
-type Disponibilidad = { nombre: string; existencia: number }
 
 type Variante = {
   id: string
@@ -36,14 +36,12 @@ type Similar = {
 export default function ProductoDetalleClient({
   producto,
   nombreCategoria,
-  disponibilidad,
   totalDisponible,
   variantes,
   similares,
 }: {
   producto: Producto
   nombreCategoria: string | null
-  disponibilidad: Disponibilidad[]
   totalDisponible: number
   variantes: Variante[]
   similares: Similar[]
@@ -86,17 +84,10 @@ export default function ProductoDetalleClient({
       </nav>
 
       <div className="grid gap-10 md:grid-cols-2">
-        <div className="flex h-80 items-center justify-center rounded-2xl bg-white p-6 shadow-sm md:h-[420px]">
-          <ProductoImagen
-            imagenUrl={producto.imagen_url}
-            imagenUrlHover={producto.imagen_url_hover}
-            nombre={producto.nombre}
-            width={400}
-            height={400}
-            className="h-full w-full object-contain"
-            classNamePlaceholder="h-40 w-40 rounded-full object-cover opacity-70"
-          />
-        </div>
+        <ProductoGaleria
+          imagenes={producto.imagenes && producto.imagenes.length > 0 ? producto.imagenes : producto.imagen_url ? [producto.imagen_url] : []}
+          nombre={producto.nombre}
+        />
 
         <div>
           {nombreCategoria && (
@@ -132,16 +123,7 @@ export default function ProductoDetalleClient({
             {agotado ? (
               <p className="text-sm font-bold text-[#B81C1C]">Agotado por el momento</p>
             ) : (
-              <>
-                <p className="text-sm font-bold text-[#1A7A3E]">Disponible: {totalDisponible} unidades en total</p>
-                <ul className="mt-2 space-y-1 text-xs text-gray-600">
-                  {disponibilidad.map((d) => (
-                    <li key={d.nombre}>
-                      {d.nombre}: {d.existencia > 0 ? `${d.existencia} disponibles` : 'sin stock'}
-                    </li>
-                  ))}
-                </ul>
-              </>
+              <p className="text-sm font-bold text-[#1A7A3E]">Disponible: {totalDisponible} unidades</p>
             )}
           </div>
 
