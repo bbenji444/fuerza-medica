@@ -76,14 +76,16 @@ export default async function Home() {
         {/* Misión y Visión */}
         <section className="bg-white">
           <div className="mx-auto grid max-w-6xl gap-6 px-5 py-14 sm:grid-cols-2">
-            <div className="rounded-2xl bg-fondo-claro p-8">
-              <p className="text-lg font-bold text-navy">Misión</p>
+            <div className="group relative overflow-hidden rounded-2xl bg-fondo-claro p-8 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg">
+              <span className="absolute inset-x-0 top-0 h-1 origin-left scale-x-0 bg-azul transition-transform duration-300 group-hover:scale-x-100" />
+              <p className="text-lg font-bold text-navy transition group-hover:text-azul">Misión</p>
               <p className="mt-2 text-sm leading-relaxed text-gray-600">
                 Mejorar el bienestar diario y la calidad de vida de nuestros clientes ofreciendo productos médicos innovadores y útiles que faciliten la vida cotidiana y aporten comodidad a nuestros usuarios. Logramos esto mediante un esquema de atención personalizada, capacitación continua y un estándar de servicio de excelencia.
               </p>
             </div>
-            <div className="rounded-2xl bg-fondo-claro p-8">
-              <p className="text-lg font-bold text-navy">Visión</p>
+            <div className="group relative overflow-hidden rounded-2xl bg-fondo-claro p-8 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg">
+              <span className="absolute inset-x-0 top-0 h-1 origin-left scale-x-0 bg-azul transition-transform duration-300 group-hover:scale-x-100" />
+              <p className="text-lg font-bold text-navy transition group-hover:text-azul">Visión</p>
               <p className="mt-2 text-sm leading-relaxed text-gray-600">
                 Ser reconocidos como el aliado de confianza en el hogar y día a día de nuestros clientes, transformando el cuidado de la salud en una experiencia accesible, comprensible y sumamente humana.
               </p>
