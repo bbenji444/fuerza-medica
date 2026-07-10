@@ -105,7 +105,12 @@ export default function VentaRapidaPanel({
   const supabase = createClient()
   const router = useRouter()
 
-  const [sucursalId, setSucursalId] = useState(usuario?.sucursal_id || sucursales[0]?.id || '')
+  const [sucursalId, setSucursalId] = useState(
+    usuario?.sucursal_id
+    || sucursales.find((s) => s.nombre.toLowerCase().includes('coacalco'))?.id
+    || sucursales[0]?.id
+    || ''
+  )
 
   const [modoPago, setModoPago] = useState<ModoPago>('efectivo')
   const [montoEfectivoInput, setMontoEfectivoInput] = useState('')
@@ -135,6 +140,7 @@ export default function VentaRapidaPanel({
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
   const [confirmacion, setConfirmacion] = useState<{ folio: string; venta: any; items: ItemCarrito[] } | null>(null)
+  const [mostrarResumenVenta, setMostrarResumenVenta] = useState(false)
   const [ivaCalc, setIvaCalc] = useState(String(configuracion.iva_porcentaje))
   const [margenBulk, setMargenBulk] = useState('')
   const [margenPorItem, setMargenPorItem] = useState<Record<string, string>>({})
@@ -519,6 +525,7 @@ export default function VentaRapidaPanel({
     }
 
     setConfirmacion({ folio: venta.folio, venta, items: carrito })
+    setMostrarResumenVenta(true)
     reiniciarParaSiguienteVenta()
     router.refresh()
     onVentaRegistrada()
@@ -1003,6 +1010,62 @@ export default function VentaRapidaPanel({
       >
         {guardando ? 'Registrando...' : !corteAbierto ? 'Abre la caja para vender' : 'Registrar venta'}
       </button>
+
+      {mostrarResumenVenta && confirmacion && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+          }}
+        >
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '28px', width: '360px' }}>
+            <p style={{ color: '#1A7A3E', fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>
+              ✓ Venta registrada
+            </p>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '18px' }}>
+              Folio {confirmacion.folio}
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#333', marginBottom: '8px' }}>
+              <span>Total</span>
+              <span style={{ fontWeight: 700 }}>${confirmacion.venta.total.toFixed(2)}</span>
+            </div>
+
+            {confirmacion.venta.monto_recibido_efectivo != null && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#333', marginBottom: '8px' }}>
+                <span>Recibido en efectivo</span>
+                <span style={{ fontWeight: 700 }}>${confirmacion.venta.monto_recibido_efectivo.toFixed(2)}</span>
+              </div>
+            )}
+
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700,
+              marginTop: '12px', padding: '10px 12px', borderRadius: '6px',
+              color: confirmacion.venta.cambio > 0 ? '#B81C1C' : '#1A7A3E',
+              backgroundColor: confirmacion.venta.cambio > 0 ? '#FDE8E8' : '#E8F7EE',
+            }}>
+              <span>Cambio a entregar</span>
+              <span>${confirmacion.venta.cambio.toFixed(2)}</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button
+                onClick={descargarTicketConfirmacion}
+                style={{ flex: 1, padding: '11px', backgroundColor: 'white', color: '#1A6DD4', border: '1px solid #1A6DD4', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Generar ticket
+              </button>
+              <button
+                onClick={() => setMostrarResumenVenta(false)}
+                style={{ flex: 1, padding: '11px', backgroundColor: '#1A6DD4', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Aceptar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -50,6 +50,15 @@ export default async function VentasPage() {
       .order('abierto_en', { ascending: false }),
   ])
 
+  // Orden fijo: Coacalco → Tultepec → resto (ej. "Próximamente" siempre al final)
+  const sucursalesOrdenadas = [
+    ...(sucursales || []).filter((s) => s.nombre.toLowerCase().includes('coacalco')),
+    ...(sucursales || []).filter((s) => s.nombre.toLowerCase().includes('tultepec')),
+    ...(sucursales || []).filter(
+      (s) => !s.nombre.toLowerCase().includes('coacalco') && !s.nombre.toLowerCase().includes('tultepec')
+    ),
+  ]
+
   return (
     <div style={{ padding: '40px', backgroundColor: '#F4F8FF', minHeight: '100vh' }}>
       <h1 style={{ color: '#0D1B3E', fontSize: '24px', marginBottom: '8px' }}>
@@ -63,7 +72,7 @@ export default async function VentasPage() {
         ventas={(ventas || []) as any}
         clientes={clientes || []}
         productos={productos || []}
-        sucursales={sucursales || []}
+        sucursales={sucursalesOrdenadas}
         inventario={inventario}
         promociones={promociones || []}
         configuracion={configuracion || { id: '', margen_ganancia: 70, iva_porcentaje: 16 }}

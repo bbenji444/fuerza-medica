@@ -90,7 +90,12 @@ export default function NuevaCotizacionModal({
   const [editandoClienteId, setEditandoClienteId] = useState<string | null>(null)
   const [formClienteEdit, setFormClienteEdit] = useState({ nombre: '', telefono: '', correo: '', direccion: '' })
 
-  const [sucursalId, setSucursalId] = useState(usuario?.sucursal_id || sucursales[0]?.id || '')
+  const [sucursalId, setSucursalId] = useState(
+    usuario?.sucursal_id
+    || sucursales.find((s) => s.nombre.toLowerCase().includes('coacalco'))?.id
+    || sucursales[0]?.id
+    || ''
+  )
   const [estado, setEstado] = useState('borrador')
   const [busquedaProducto, setBusquedaProducto] = useState('')
   const [mensajeEscaneo, setMensajeEscaneo] = useState('')
