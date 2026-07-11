@@ -141,6 +141,7 @@ export default function VentaRapidaPanel({
   const [error, setError] = useState('')
   const [confirmacion, setConfirmacion] = useState<{ folio: string; venta: any; items: ItemCarrito[] } | null>(null)
   const [mostrarResumenVenta, setMostrarResumenVenta] = useState(false)
+  const [mostrarConfirmarVenta, setMostrarConfirmarVenta] = useState(false)
   const [ivaCalc, setIvaCalc] = useState(String(configuracion.iva_porcentaje))
   const [margenBulk, setMargenBulk] = useState('')
   const [margenPorItem, setMargenPorItem] = useState<Record<string, string>>({})
@@ -410,9 +411,7 @@ export default function VentaRapidaPanel({
     inputProductoRef.current?.focus()
   }
 
-  async function guardarVenta() {
-    if (guardandoRef.current) return
-
+  function abrirConfirmacionVenta() {
     if (carrito.length === 0) {
       setError('Agrega al menos un producto')
       return
@@ -429,12 +428,23 @@ export default function VentaRapidaPanel({
       setError(`Los montos por método de pago no suman el total (falta ${diferenciaMontos > 0 ? '' : 'sobra '}$${Math.abs(diferenciaMontos).toFixed(2)})`)
       return
     }
-    if (recibidoInsuficiente) {
-      setError('El monto recibido en efectivo es menor al monto a cobrar en efectivo')
-      return
-    }
     if (modoNuevoCliente && !nuevoCliente.nombre.trim()) {
       setError('El nombre del cliente es obligatorio')
+      return
+    }
+    setError('')
+    setMostrarConfirmarVenta(true)
+  }
+
+  async function guardarVenta() {
+    if (guardandoRef.current) return
+
+    if (!corteAbierto) {
+      setError('Abre la caja antes de registrar una venta')
+      return
+    }
+    if (recibidoInsuficiente) {
+      setError('El monto recibido en efectivo es menor al monto a cobrar en efectivo')
       return
     }
 
@@ -525,6 +535,7 @@ export default function VentaRapidaPanel({
     }
 
     setConfirmacion({ folio: venta.folio, venta, items: carrito })
+    setMostrarConfirmarVenta(false)
     setMostrarResumenVenta(true)
     reiniciarParaSiguienteVenta()
     router.refresh()
@@ -1000,16 +1011,96 @@ export default function VentaRapidaPanel({
       )}
 
       <button
-        onClick={guardarVenta}
-        disabled={guardando || hayExcesoStock || carrito.length === 0 || !corteAbierto || !montosCuadran || recibidoInsuficiente}
+        onClick={abrirConfirmacionVenta}
+        disabled={guardando || hayExcesoStock || carrito.length === 0 || !corteAbierto || !montosCuadran}
         style={{
           width: '100%', marginTop: '16px', padding: '14px', backgroundColor: '#1A6DD4', color: 'white',
           border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 700, cursor: 'pointer',
-          opacity: (guardando || hayExcesoStock || carrito.length === 0 || !corteAbierto || !montosCuadran || recibidoInsuficiente) ? 0.6 : 1,
+          opacity: (guardando || hayExcesoStock || carrito.length === 0 || !corteAbierto || !montosCuadran) ? 0.6 : 1,
         }}
       >
         {guardando ? 'Registrando...' : !corteAbierto ? 'Abre la caja para vender' : 'Registrar venta'}
       </button>
+
+      {mostrarConfirmarVenta && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+          }}
+        >
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '28px', width: '380px' }}>
+            <p style={{ color: '#0D1B3E', fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
+              Confirmar venta
+            </p>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '18px' }}>
+              Revisa el monto recibido antes de registrar
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#333', marginBottom: '8px' }}>
+              <span>Método de pago</span>
+              <span style={{ fontWeight: 700 }}>{labelModoPago[modoPago]}</span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#333', marginBottom: '8px' }}>
+              <span>Total</span>
+              <span style={{ fontWeight: 700 }}>${total.toFixed(2)}</span>
+            </div>
+
+            {montoEfectivoNum > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                <label style={{ fontSize: '13px', color: '#333', fontWeight: 600 }}>Recibido en efectivo</label>
+                <input
+                  type="number" step="0.01" autoFocus placeholder={montoEfectivoNum.toFixed(2)}
+                  value={montoRecibidoInput} onChange={(e) => setMontoRecibidoInput(e.target.value)}
+                  style={{ width: '110px', padding: '8px', border: recibidoInsuficiente ? '1px solid #B81C1C' : '1px solid #E0E8F5', borderRadius: '6px', fontSize: '14px' }}
+                />
+              </div>
+            )}
+
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700,
+              marginTop: '14px', padding: '10px 12px', borderRadius: '6px',
+              color: cambioCalculado > 0 ? '#B81C1C' : '#1A7A3E',
+              backgroundColor: cambioCalculado > 0 ? '#FDE8E8' : '#E8F7EE',
+            }}>
+              <span>Cambio a entregar</span>
+              <span>${cambioCalculado.toFixed(2)}</span>
+            </div>
+
+            {recibidoInsuficiente && (
+              <p style={{ color: '#B81C1C', fontSize: '12px', marginTop: '8px' }}>
+                El monto recibido es menor al monto a cobrar en efectivo.
+              </p>
+            )}
+            {error && (
+              <p style={{ color: '#B81C1C', fontSize: '12px', marginTop: '8px' }}>{error}</p>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button
+                onClick={() => { setMostrarConfirmarVenta(false); setError('') }}
+                disabled={guardando}
+                style={{ flex: 1, padding: '11px', backgroundColor: 'white', color: '#888', border: '1px solid #E0E8F5', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={guardarVenta}
+                disabled={guardando || recibidoInsuficiente}
+                style={{
+                  flex: 1, padding: '11px', backgroundColor: '#1A6DD4', color: 'white', border: 'none',
+                  borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+                  opacity: (guardando || recibidoInsuficiente) ? 0.6 : 1,
+                }}
+              >
+                {guardando ? 'Registrando...' : 'Confirmar venta'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {mostrarResumenVenta && confirmacion && (
         <div
