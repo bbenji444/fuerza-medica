@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server'
 import { obtenerUsuarioActual } from '@/utils/supabase/usuarioActual'
 import { redirect } from 'next/navigation'
 import PromocionesTable from './PromocionesTable'
+import { fetchTodasLasFilas } from '@/utils/fetchTodasLasFilas'
 
 export default async function PromocionesPage() {
   const { user, usuario } = await obtenerUsuarioActual()
@@ -10,17 +11,17 @@ export default async function PromocionesPage() {
 
   const supabase = await createClient()
 
-  const [{ data: promociones }, { data: productos }, { data: categorias }] = await Promise.all([
+  const [{ data: promociones }, productos, { data: categorias }] = await Promise.all([
     supabase
       .from('promociones')
       .select('id, nombre, tipo, valor, producto_id, categoria_id, activa, fecha_inicio, fecha_fin, creado_en, productos(nombre), categorias(nombre)')
       .order('creado_en', { ascending: false }),
-    supabase
-      .from('productos')
-      .select('id, codigo, nombre')
-      .eq('activo', true)
-      .order('nombre')
-      .range(0, 1999),
+    fetchTodasLasFilas<{ id: string; codigo: string; nombre: string }>(
+      supabase,
+      'productos',
+      'id, codigo, nombre',
+      (query) => query.eq('activo', true).order('nombre')
+    ),
     supabase.from('categorias').select('id, nombre, categoria_padre').order('nombre'),
   ])
 
@@ -35,7 +36,7 @@ export default async function PromocionesPage() {
 
       <PromocionesTable
         promociones={(promociones || []) as any}
-        productos={productos || []}
+        productos={productos}
         categorias={categorias || []}
       />
     </div>

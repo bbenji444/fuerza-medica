@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server'
 import { obtenerUsuarioActual } from '@/utils/supabase/usuarioActual'
 import { redirect } from 'next/navigation'
 import DestacadosTable from './DestacadosTable'
+import { fetchTodasLasFilas } from '@/utils/fetchTodasLasFilas'
 
 export default async function DestacadosPage() {
   const { user, usuario } = await obtenerUsuarioActual()
@@ -10,17 +11,17 @@ export default async function DestacadosPage() {
 
   const supabase = await createClient()
 
-  const [{ data: destacados }, { data: productos }] = await Promise.all([
+  const [{ data: destacados }, productos] = await Promise.all([
     supabase
       .from('productos_destacados')
       .select('id, posicion, producto_id, productos(codigo, nombre, precio_venta, imagen_url)')
       .order('posicion'),
-    supabase
-      .from('productos')
-      .select('id, codigo, nombre, precio_venta')
-      .eq('activo', true)
-      .order('nombre')
-      .range(0, 1999),
+    fetchTodasLasFilas<{ id: string; codigo: string; nombre: string; precio_venta: number }>(
+      supabase,
+      'productos',
+      'id, codigo, nombre, precio_venta',
+      (query) => query.eq('activo', true).order('nombre')
+    ),
   ])
 
   return (
@@ -32,7 +33,7 @@ export default async function DestacadosPage() {
         Elige qué productos se muestran en la sección &quot;Los más vendidos&quot; de la página de inicio. Esta lista es manual — no se calcula de las ventas reales, es para destacar lo que quieras promocionar.
       </p>
 
-      <DestacadosTable destacados={(destacados || []) as any} productos={productos || []} />
+      <DestacadosTable destacados={(destacados || []) as any} productos={productos} />
     </div>
   )
 }

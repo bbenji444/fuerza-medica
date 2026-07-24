@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { fetchTodasLasFilas } from '@/utils/fetchTodasLasFilas'
 
 const INTERVALO_MS = 60_000
 
@@ -21,20 +22,11 @@ export default function StockBajoCard({
     setActualizando(true)
     const supabase = createClient()
 
-    let todas: { producto_id: string; existencia: number; inventario_maximo: number; sucursal_id: string }[] = []
-    let desde = 0
-    const LOTE = 2000
-
-    while (true) {
-      const { data, error } = await supabase
-        .from('inventario')
-        .select('producto_id, existencia, inventario_maximo, sucursal_id')
-        .range(desde, desde + LOTE - 1)
-      if (error || !data || data.length === 0) break
-      todas = todas.concat(data)
-      if (data.length < LOTE) break
-      desde += LOTE
-    }
+    const todas = await fetchTodasLasFilas<{ producto_id: string; existencia: number; inventario_maximo: number; sucursal_id: string }>(
+      supabase,
+      'inventario',
+      'producto_id, existencia, inventario_maximo, sucursal_id'
+    )
 
     setPorSucursal(
       sucursales.map((s) => ({

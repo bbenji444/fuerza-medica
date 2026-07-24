@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { generarPdfStockBajo } from '@/utils/generarPdfStockBajo'
@@ -59,6 +59,19 @@ const formNuevoVacio = {
   inventario_maximo: '0',
 }
 
+function numerosDePagina(actual: number, total: number): (number | '...')[] {
+  const ventana = 1
+  const paginas: (number | '...')[] = []
+  for (let n = 1; n <= total; n++) {
+    if (n === 1 || n === total || (n >= actual - ventana && n <= actual + ventana)) {
+      paginas.push(n)
+    } else if (paginas[paginas.length - 1] !== '...') {
+      paginas.push('...')
+    }
+  }
+  return paginas
+}
+
 export default function InventarioTable({
   inventario,
   sucursales,
@@ -103,6 +116,8 @@ export default function InventarioTable({
   const [margenPct, setMargenPct] = useState(70)
   const [categoriaMargen, setCategoriaMargen] = useState('')
   const [aplicandoMargen, setAplicandoMargen] = useState(false)
+  const [pagina, setPagina] = useState(1)
+  const POR_PAGINA = 100
   const router = useRouter()
   const supabase = createClient()
 
@@ -154,6 +169,10 @@ export default function InventarioTable({
         ? (a.productos?.nombre || '').localeCompare(b.productos?.nombre || '')
         : (b.productos?.nombre || '').localeCompare(a.productos?.nombre || '')
     )
+
+  useEffect(() => {
+    setPagina(1)
+  }, [busqueda, categoriaFiltro, subcategoriaFiltro, estadoStockFiltro, orden, sucursalActiva])
 
   const productosBajo = inventario.filter(esStockBajo)
 
@@ -210,7 +229,9 @@ export default function InventarioTable({
     setSubcategoriaFiltro('')
   }
 
-  const visibles = filtrados.slice(0, 100)
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / POR_PAGINA))
+  const paginaSegura = Math.min(pagina, totalPaginas)
+  const visibles = filtrados.slice((paginaSegura - 1) * POR_PAGINA, paginaSegura * POR_PAGINA)
   const todosSeleccionados = filtrados.length > 0 && filtrados.every((i) => seleccionados.has(i.id))
 
   function toggleTodos() {
@@ -996,10 +1017,58 @@ export default function InventarioTable({
         </table>
       </div>
 
-      {filtrados.length > 100 && (
-        <p style={{ color: '#888', fontSize: '13px', marginTop: '12px' }}>
-          Mostrando 100 de {filtrados.length} resultados. Sigue escribiendo o filtrando para ver más.
-        </p>
+      {filtrados.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginTop: '12px' }}>
+          <p style={{ color: '#888', fontSize: '13px', margin: 0 }}>
+            Mostrando {visibles.length === 0 ? 0 : (paginaSegura - 1) * POR_PAGINA + 1}-{(paginaSegura - 1) * POR_PAGINA + visibles.length} de {filtrados.length} resultados
+          </p>
+          {totalPaginas > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setPagina(paginaSegura - 1)}
+                disabled={paginaSegura === 1}
+                style={{
+                  padding: '6px 10px', fontSize: '13px', borderRadius: '6px', border: '1px solid #ddd',
+                  background: '#fff', color: paginaSegura === 1 ? '#ccc' : '#0D1B3E',
+                  cursor: paginaSegura === 1 ? 'default' : 'pointer',
+                }}
+              >
+                ‹ Anterior
+              </button>
+              {numerosDePagina(paginaSegura, totalPaginas).map((n, idx) =>
+                n === '...' ? (
+                  <span key={`ellipsis-${idx}`} style={{ padding: '0 4px', color: '#888', fontSize: '13px' }}>…</span>
+                ) : (
+                  <button
+                    key={n}
+                    onClick={() => setPagina(n as number)}
+                    style={{
+                      padding: '6px 11px', fontSize: '13px', borderRadius: '6px',
+                      border: n === paginaSegura ? '1px solid #1A6DD4' : '1px solid #ddd',
+                      background: n === paginaSegura ? '#1A6DD4' : '#fff',
+                      color: n === paginaSegura ? '#fff' : '#0D1B3E',
+                      fontWeight: n === paginaSegura ? 700 : 400,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {n}
+                  </button>
+                )
+              )}
+              <button
+                onClick={() => setPagina(paginaSegura + 1)}
+                disabled={paginaSegura === totalPaginas}
+                style={{
+                  padding: '6px 10px', fontSize: '13px', borderRadius: '6px', border: '1px solid #ddd',
+                  background: '#fff', color: paginaSegura === totalPaginas ? '#ccc' : '#0D1B3E',
+                  cursor: paginaSegura === totalPaginas ? 'default' : 'pointer',
+                }}
+              >
+                Siguiente ›
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {editando && editando.productos && (

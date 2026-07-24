@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server'
 import { obtenerUsuarioActual } from '@/utils/supabase/usuarioActual'
 import { redirect } from 'next/navigation'
 import InventarioTable from './InventarioTable'
+import { fetchTodasLasFilas } from '@/utils/fetchTodasLasFilas'
 
 export default async function InventarioPage({
   searchParams,
@@ -22,13 +23,12 @@ export default async function InventarioPage({
 
   const sucursalActiva = esAdmin ? (params.sucursal || sucursales?.[0]?.id) : usuario?.sucursal_id
 
-  const { data: inventario } = await supabase
-    .from('inventario')
-    .select(
-      'id, existencia, inventario_minimo, inventario_maximo, productos(id, codigo, nombre, categoria_id, categorias(nombre), precio_costo, precio_venta, precio_mayoreo, activo, imagen_url, imagen_url_hover, imagenes, descripcion)'
-    )
-    .eq('sucursal_id', sucursalActiva)
-    .order('productos(nombre)')
+  const inventario = await fetchTodasLasFilas(
+    supabase,
+    'inventario',
+    'id, existencia, inventario_minimo, inventario_maximo, productos(id, codigo, nombre, categoria_id, categorias(nombre), precio_costo, precio_venta, precio_mayoreo, activo, imagen_url, imagen_url_hover, imagenes, descripcion)',
+    (query) => query.eq('sucursal_id', sucursalActiva).order('productos(nombre)')
+  )
 
   return (
     <div style={{ padding: '40px', backgroundColor: '#F4F8FF', minHeight: '100vh' }}>
@@ -40,7 +40,7 @@ export default async function InventarioPage({
       </p>
 
       <InventarioTable
-        inventario={(inventario || []) as any}
+        inventario={inventario as any}
         sucursales={sucursales || []}
         sucursalActiva={sucursalActiva}
         categorias={categorias || []}

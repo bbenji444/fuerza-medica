@@ -13,7 +13,7 @@ export default async function VentasPage() {
   const [
     { data: ventas },
     { data: clientes },
-    { data: productos },
+    productos,
     { data: sucursales },
     inventario,
     { data: promociones },
@@ -25,12 +25,12 @@ export default async function VentasPage() {
       .select('id, folio, total, metodo_pago, creado_en, sucursal_id, clientes(nombre), sucursales(nombre), monto_efectivo, monto_tarjeta, monto_transferencia, monto_recibido_efectivo, cambio')
       .order('creado_en', { ascending: false }),
     supabase.from('clientes').select('id, nombre, telefono, correo, direccion').order('nombre'),
-    supabase
-      .from('productos')
-      .select('id, codigo, nombre, precio_venta, precio_mayoreo, precio_costo, categoria_id')
-      .eq('activo', true)
-      .order('nombre')
-      .range(0, 1999),
+    fetchTodasLasFilas<{ id: string; codigo: string; nombre: string; precio_venta: number; precio_mayoreo: number; precio_costo: number; categoria_id?: string }>(
+      supabase,
+      'productos',
+      'id, codigo, nombre, precio_venta, precio_mayoreo, precio_costo, categoria_id',
+      (query) => query.eq('activo', true).order('nombre')
+    ),
     supabase.from('sucursales').select('id, nombre').order('nombre'),
     fetchTodasLasFilas<{ producto_id: string; sucursal_id: string; existencia: number }>(
       supabase,
@@ -71,7 +71,7 @@ export default async function VentasPage() {
       <VentasTable
         ventas={(ventas || []) as any}
         clientes={clientes || []}
-        productos={productos || []}
+        productos={productos}
         sucursales={sucursalesOrdenadas}
         inventario={inventario}
         promociones={promociones || []}
