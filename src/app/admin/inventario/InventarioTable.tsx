@@ -118,6 +118,12 @@ export default function InventarioTable({
   const [aplicandoMargen, setAplicandoMargen] = useState(false)
   const [pagina, setPagina] = useState(1)
   const POR_PAGINA = 100
+  const [mostrarCategorias, setMostrarCategorias] = useState(false)
+  const [categoriaEditandoId, setCategoriaEditandoId] = useState<string | null>(null)
+  const [formCategoria, setFormCategoria] = useState({ nombre: '', categoria_padre: '' })
+  const [guardandoCategoria, setGuardandoCategoria] = useState(false)
+  const [borrandoCategoriaId, setBorrandoCategoriaId] = useState<string | null>(null)
+  const [errorCategoria, setErrorCategoria] = useState('')
   const router = useRouter()
   const supabase = createClient()
 
@@ -216,6 +222,122 @@ export default function InventarioTable({
         inventario_maximo: i.inventario_maximo,
       }))
     )
+  }
+
+  function abrirCategorias() {
+    setCategoriaEditandoId(null)
+    setFormCategoria({ nombre: '', categoria_padre: '' })
+    setErrorCategoria('')
+    setMostrarCategorias(true)
+  }
+
+  function cerrarModalCategorias() {
+    setMostrarCategorias(false)
+    setCategoriaEditandoId(null)
+    setFormCategoria({ nombre: '', categoria_padre: '' })
+    setErrorCategoria('')
+  }
+
+  function abrirEditarCategoria(cat: Categoria) {
+    setCategoriaEditandoId(cat.id)
+    setFormCategoria({ nombre: cat.nombre, categoria_padre: cat.categoria_padre || '' })
+    setErrorCategoria('')
+  }
+
+  function cancelarEdicionCategoria() {
+    setCategoriaEditandoId(null)
+    setFormCategoria({ nombre: '', categoria_padre: '' })
+    setErrorCategoria('')
+  }
+
+  async function guardarCategoria() {
+    const nombre = formCategoria.nombre.trim()
+    if (!nombre) {
+      setErrorCategoria('El nombre es obligatorio.')
+      return
+    }
+
+    const categoriaPadre = formCategoria.categoria_padre || null
+
+    if (categoriaPadre === categoriaEditandoId) {
+      setErrorCategoria('Una categoría no puede ser su propia categoría padre.')
+      return
+    }
+
+    if (categoriaPadre) {
+      const padre = categorias.find((c) => c.id === categoriaPadre)
+      if (padre?.categoria_padre) {
+        setErrorCategoria('No se permiten sub-subcategorías: elige una categoría principal como padre.')
+        return
+      }
+    }
+
+    if (categoriaEditandoId && categoriaPadre && categorias.some((c) => c.categoria_padre === categoriaEditandoId)) {
+      setErrorCategoria('Esta categoría tiene subcategorías propias: no puede convertirse en subcategoría de otra.')
+      return
+    }
+
+    const duplicada = categorias.find(
+      (c) =>
+        c.id !== categoriaEditandoId &&
+        c.nombre.toLowerCase().trim() === nombre.toLowerCase() &&
+        (c.categoria_padre || null) === categoriaPadre
+    )
+    if (duplicada) {
+      setErrorCategoria('Ya existe una categoría con este nombre en el mismo nivel.')
+      return
+    }
+
+    setGuardandoCategoria(true)
+    setErrorCategoria('')
+
+    const { error } = categoriaEditandoId
+      ? await supabase.from('categorias').update({ nombre, categoria_padre: categoriaPadre }).eq('id', categoriaEditandoId)
+      : await supabase.from('categorias').insert({ nombre, categoria_padre: categoriaPadre })
+
+    setGuardandoCategoria(false)
+
+    if (error) {
+      setErrorCategoria('Error al guardar: ' + error.message)
+      return
+    }
+
+    setCategoriaEditandoId(null)
+    setFormCategoria({ nombre: '', categoria_padre: '' })
+    router.refresh()
+  }
+
+  async function borrarCategoria(cat: Categoria) {
+    if (categorias.some((c) => c.categoria_padre === cat.id)) {
+      alert('No se puede eliminar: esta categoría tiene subcategorías. Bórralas o reasígnalas primero.')
+      return
+    }
+
+    if (!confirm(`¿Eliminar la categoría "${cat.nombre}"? Esta acción no se puede deshacer.`)) return
+
+    setBorrandoCategoriaId(cat.id)
+
+    const [{ count: enProductos }, { count: enPromociones }] = await Promise.all([
+      supabase.from('productos').select('*', { count: 'exact', head: true }).eq('categoria_id', cat.id),
+      supabase.from('promociones').select('*', { count: 'exact', head: true }).eq('categoria_id', cat.id),
+    ])
+
+    if ((enProductos || 0) > 0 || (enPromociones || 0) > 0) {
+      setBorrandoCategoriaId(null)
+      alert('No se puede eliminar: hay productos o promociones que usan esta categoría. Reasígnalos primero.')
+      return
+    }
+
+    const { error } = await supabase.from('categorias').delete().eq('id', cat.id)
+
+    setBorrandoCategoriaId(null)
+
+    if (error) {
+      alert('Error al eliminar la categoría: ' + error.message)
+      return
+    }
+
+    router.refresh()
   }
 
   function cambiarSucursal(id: string) {
@@ -705,7 +827,134 @@ export default function InventarioTable({
             % Ganancia en lote
           </button>
         )}
+
+        {esAdmin && (
+          <button
+            onClick={abrirCategorias}
+            style={{
+              padding: '8px 16px', borderRadius: '8px', border: 'none',
+              fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              backgroundColor: 'white', color: '#0D1B3E', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            }}
+          >
+            Categorías
+          </button>
+        )}
       </div>
+
+      {/* ── Modal: gestión de categorías ── */}
+      {mostrarCategorias && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 50,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+        }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '520px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
+            <h2 style={{ color: '#0D1B3E', fontSize: '17px', fontWeight: 700, marginBottom: '6px' }}>
+              Gestionar categorías
+            </h2>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '18px' }}>
+              Crea, edita o borra categorías y subcategorías del catálogo.
+            </p>
+
+            {errorCategoria && (
+              <div style={{ padding: '10px 14px', borderRadius: '8px', backgroundColor: '#FDE8E8', color: '#B81C1C', fontSize: '13px', marginBottom: '14px' }}>
+                {errorCategoria}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '14px', backgroundColor: '#F4F8FF', borderRadius: '8px', marginBottom: '18px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: '#0D1B3E' }}>
+                Nombre
+                <input
+                  type="text"
+                  value={formCategoria.nombre}
+                  onChange={(e) => setFormCategoria((f) => ({ ...f, nombre: e.target.value }))}
+                  style={{ display: 'block', width: '100%', marginTop: '4px', padding: '9px 12px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '14px' }}
+                />
+              </label>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: '#0D1B3E' }}>
+                Categoría padre (opcional)
+                <select
+                  value={formCategoria.categoria_padre}
+                  onChange={(e) => setFormCategoria((f) => ({ ...f, categoria_padre: e.target.value }))}
+                  style={{ display: 'block', width: '100%', marginTop: '4px', padding: '9px 12px', border: '1px solid #E0E8F5', borderRadius: '6px', fontSize: '13px' }}
+                >
+                  <option value="">Ninguna (categoría principal)</option>
+                  {categorias.filter((c) => !c.categoria_padre && c.id !== categoriaEditandoId).map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                </select>
+              </label>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                {categoriaEditandoId && (
+                  <button
+                    onClick={cancelarEdicionCategoria}
+                    style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#F0F4FB', color: '#888', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Cancelar edición
+                  </button>
+                )}
+                <button
+                  onClick={guardarCategoria}
+                  disabled={guardandoCategoria}
+                  style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#1A6DD4', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: guardandoCategoria ? 0.6 : 1 }}
+                >
+                  {guardandoCategoria ? 'Guardando...' : categoriaEditandoId ? 'Guardar cambios' : '+ Agregar categoría'}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {categorias.filter((c) => !c.categoria_padre).length === 0 && (
+                <p style={{ fontSize: '13px', color: '#888' }}>No hay categorías todavía.</p>
+              )}
+              {categorias.filter((c) => !c.categoria_padre).map((principal) => (
+                <div key={principal.id}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 4px', borderBottom: '1px solid #F0F4FB' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#0D1B3E' }}>{principal.nombre}</span>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button onClick={() => abrirEditarCategoria(principal)} style={{ fontSize: '12px', color: '#1A6DD4', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => borrarCategoria(principal)}
+                        disabled={borrandoCategoriaId === principal.id}
+                        style={{ fontSize: '12px', color: '#B81C1C', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        {borrandoCategoriaId === principal.id ? 'Borrando...' : 'Borrar'}
+                      </button>
+                    </div>
+                  </div>
+                  {categorias.filter((sub) => sub.categoria_padre === principal.id).map((sub) => (
+                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 4px 8px 20px', borderBottom: '1px solid #F0F4FB' }}>
+                      <span style={{ fontSize: '13px', color: '#333' }}>— {sub.nombre}</span>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button onClick={() => abrirEditarCategoria(sub)} style={{ fontSize: '12px', color: '#1A6DD4', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => borrarCategoria(sub)}
+                          disabled={borrandoCategoriaId === sub.id}
+                          style={{ fontSize: '12px', color: '#B81C1C', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          {borrandoCategoriaId === sub.id ? 'Borrando...' : 'Borrar'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={cerrarModalCategorias}
+              style={{ marginTop: '20px', width: '100%', padding: '11px', borderRadius: '8px', border: 'none', backgroundColor: '#F0F4FB', color: '#888', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal: ajuste de precio por margen de ganancia ── */}
       {mostrarMargen && (
