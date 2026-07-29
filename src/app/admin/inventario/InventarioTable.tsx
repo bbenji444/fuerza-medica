@@ -89,6 +89,7 @@ export default function InventarioTable({
   const [categoriaFiltro, setCategoriaFiltro] = useState('')
   const [subcategoriaFiltro, setSubcategoriaFiltro] = useState('')
   const [estadoStockFiltro, setEstadoStockFiltro] = useState('')
+  const [estadoActivoFiltro, setEstadoActivoFiltro] = useState('')
   const [orden, setOrden] = useState<'az' | 'za'>('az')
   const [editando, setEditando] = useState<Inventario | null>(null)
   const [guardando, setGuardando] = useState(false)
@@ -101,6 +102,7 @@ export default function InventarioTable({
   const [agregando, setAgregando] = useState(false)
   const [errorAgregar, setErrorAgregar] = useState('')
   const [borrandoId, setBorrandoId] = useState<string | null>(null)
+  const [cambiandoActivoId, setCambiandoActivoId] = useState<string | null>(null)
   const [imagenPara, setImagenPara] = useState<Inventario | null>(null)
   const [archivoImagen, setArchivoImagen] = useState<File | null>(null)
   const [previewImagen, setPreviewImagen] = useState<string>('')
@@ -170,6 +172,11 @@ export default function InventarioTable({
       if (!estadoStockFiltro) return true
       return estadoStockFiltro === 'bajo' ? esStockBajo(i) : !esStockBajo(i)
     })
+    .filter(i => {
+      if (!estadoActivoFiltro) return true
+      const activo = i.productos?.activo ?? true
+      return estadoActivoFiltro === 'activo' ? activo : !activo
+    })
     .sort((a, b) =>
       orden === 'az'
         ? (a.productos?.nombre || '').localeCompare(b.productos?.nombre || '')
@@ -178,7 +185,7 @@ export default function InventarioTable({
 
   useEffect(() => {
     setPagina(1)
-  }, [busqueda, categoriaFiltro, subcategoriaFiltro, estadoStockFiltro, orden, sucursalActiva])
+  }, [busqueda, categoriaFiltro, subcategoriaFiltro, estadoStockFiltro, estadoActivoFiltro, orden, sucursalActiva])
 
   const productosBajo = inventario.filter(esStockBajo)
 
@@ -563,6 +570,30 @@ export default function InventarioTable({
 
     if (errorProducto) {
       alert('Error al eliminar el producto: ' + errorProducto.message)
+      return
+    }
+
+    router.refresh()
+  }
+
+  async function toggleActivo(i: Inventario) {
+    if (!i.productos) return
+    const nuevoEstado = !i.productos.activo
+
+    if (!confirm(
+      nuevoEstado
+        ? `¿Activar "${i.productos.nombre}"? Volverá a aparecer en el catálogo público.`
+        : `¿Desactivar "${i.productos.nombre}"? Dejará de aparecer en el catálogo público (no se borra, se puede reactivar después).`
+    )) return
+
+    setCambiandoActivoId(i.productos.id)
+
+    const { error } = await supabase.from('productos').update({ activo: nuevoEstado }).eq('id', i.productos.id)
+
+    setCambiandoActivoId(null)
+
+    if (error) {
+      alert('Error al cambiar el estado: ' + error.message)
       return
     }
 
@@ -1106,6 +1137,19 @@ export default function InventarioTable({
           <option value="ok">OK</option>
         </select>
 
+        <select
+          value={estadoActivoFiltro}
+          onChange={(e) => setEstadoActivoFiltro(e.target.value)}
+          style={{
+            padding: '10px 14px', border: '1px solid #E0E8F5', borderRadius: '8px',
+            fontSize: '14px', backgroundColor: 'white', minWidth: '160px'
+          }}
+        >
+          <option value="">Activos e inactivos</option>
+          <option value="activo">Solo activos</option>
+          <option value="inactivo">Solo inactivos</option>
+        </select>
+
         <div style={{ display: 'flex', gap: '6px' }}>
           <button
             onClick={() => setOrden('az')}
@@ -1183,6 +1227,7 @@ export default function InventarioTable({
               <th style={thStyle}>Mínimo</th>
               <th style={thStyle}>Máximo</th>
               <th style={thStyle}>Stock</th>
+              <th style={thStyle}>Estado</th>
               {esAdmin && <th style={thStyle}></th>}
             </tr>
           </thead>
@@ -1234,6 +1279,15 @@ export default function InventarioTable({
                       {bajo ? 'Stock bajo' : 'OK'}
                     </span>
                   </td>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    <span style={{
+                      fontSize: '11px', padding: '3px 10px', borderRadius: '999px',
+                      backgroundColor: i.productos?.activo ?? true ? '#E8F7EE' : '#F0F4FB',
+                      color: i.productos?.activo ?? true ? '#1A7A3E' : '#888', whiteSpace: 'nowrap',
+                    }}>
+                      {(i.productos?.activo ?? true) ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </td>
                   {esAdmin && (
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: '12px' }}>
@@ -1242,6 +1296,13 @@ export default function InventarioTable({
                           style={{ fontSize: '12px', color: '#1A6DD4', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                         >
                           Editar
+                        </button>
+                        <button
+                          onClick={() => toggleActivo(i)}
+                          disabled={cambiandoActivoId === i.productos?.id}
+                          style={{ fontSize: '12px', color: (i.productos?.activo ?? true) ? '#888' : '#1A7A3E', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          {cambiandoActivoId === i.productos?.id ? 'Guardando...' : (i.productos?.activo ?? true) ? 'Desactivar' : 'Activar'}
                         </button>
                         <button
                           onClick={() => abrirImagen(i)}
